@@ -1,6 +1,3 @@
-# intensicare
-Real-time critical care monitoring platform that saves lives through intelligent early warning systems and clinical decision support
-
 # Intensicare Platform 🏥⚡
 
 Intensicare is an enterprise-grade, cloud-native platform that continuously monitors ICU patients, calculates real-time risk scores, and delivers actionable insights to clinical teams. Built for hospitals, by clinicians and engineers who understand that **every second matters** in critical care.
