@@ -9,7 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DEBIAN_FRONTEND=noninteractive \
     ENVIRONMENT=development \
-    LOG_LEVEL=DEBUG
+    LOG_LEVEL=DEBUG \
+    PYTHONPATH=/app/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev curl && rm -rf /var/lib/apt/lists/*
@@ -53,7 +54,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     DEBIAN_FRONTEND=noninteractive \
-    ENVIRONMENT=production
+    ENVIRONMENT=production \
+    PYTHONPATH=/app/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev curl && rm -rf /var/lib/apt/lists/*
