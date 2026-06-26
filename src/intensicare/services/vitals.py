@@ -1,15 +1,16 @@
 """
-Serviço de ingestão de sinais vitais com idempotência e scoring MEWS.
+Serviço de ingestão de sinais vitais com idempotência e scoring MEWS + NEWS2.
 
 Responsável por:
 - Validar e persistir sinais vitais no banco
 - Garantir idempotência via chave de idempotência (X-Idempotency-Key)
-- Calcular MEWS sincronamente após ingestão
-- Persistir score clínico com versionamento
+- Calcular MEWS e NEWS2 sincronamente após ingestão
+- Persistir scores clínicos com versionamento
 """
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from intensicare.models import ClinicalScore, VitalSign
 from intensicare.schemas.vitals import VitalSignCreate, VitalSignResponse
 from intensicare.services.mews import calculate_mews, compute_trend, MEWS_VERSION
+from intensicare.services.news2 import calculate_news2
 
 
 class IdempotencyStore:
@@ -121,12 +123,15 @@ async def ingest_vitals(
         existing = result.scalar_one_or_none()
         if existing is not None:
             mews_score = await _get_mews_for_vital(db, stored_id)
+            news2_score, news2_risk = await _get_news2_for_vital(db, stored_id)
             return VitalSignResponse(
                 id=existing.id,
                 mpi_id=existing.mpi_id,
                 recorded_at=existing.recorded_at,
                 ingested_at=existing.ingested_at,
                 mews_score=mews_score,
+                news2_score=news2_score,
+                news2_risk_category=news2_risk,
                 message="Idempotent replay — vital signs already ingested",
             )
 
@@ -178,7 +183,7 @@ async def ingest_vitals(
         trend = None
         delta = None
 
-    # 5. Persiste clinical_score
+    # 5. Persiste clinical_score MEWS
     score = ClinicalScore(
         mpi_id=data.mpi_id,
         score_type="MEWS",
@@ -193,7 +198,32 @@ async def ingest_vitals(
     db.add(score)
     await db.flush()
 
-    # 6. Armazena idempotency key
+    # 6. Calcula e persiste NEWS2
+    news2_result = calculate_news2(
+        respiratory_rate=data.respiratory_rate,
+        spo2=data.spo2,
+        hypercapnic=False,
+        supplemental_o2=data.supplemental_o2,
+        systolic_bp=data.systolic_bp,
+        heart_rate=data.heart_rate,
+        avpu=data.avpu,
+        temperature=data.temperature,
+    )
+    news2_score = ClinicalScore(
+        mpi_id=data.mpi_id,
+        score_type="NEWS2",
+        score_value=news2_result.total_score,
+        algorithm_version="NEWS2-v1.0",
+        calculated_at=now,
+        vital_sign_id=vital.id,
+        components=asdict(news2_result.components),
+        trend=None,
+        delta_from_previous=None,
+    )
+    db.add(news2_score)
+    await db.flush()
+
+    # 7. Armazena idempotency key
     if idempotency_key:
         store.store_key(idempotency_key, vital.id)
 
@@ -203,6 +233,8 @@ async def ingest_vitals(
         recorded_at=vital.recorded_at,
         ingested_at=vital.ingested_at,
         mews_score=score_value,
+        news2_score=news2_result.total_score,
+        news2_risk_category=news2_result.risk_category,
         message="Vital signs ingested successfully",
     )
 
@@ -216,3 +248,24 @@ async def _get_mews_for_vital(db: AsyncSession, vital_sign_id: int) -> int | Non
     result = await db.execute(stmt)
     row = result.first()
     return row.score_value if row else None
+
+
+async def _get_news2_for_vital(db: AsyncSession, vital_sign_id: int) -> tuple[int | None, str | None]:
+    """Busca o NEWS2 score e risk_category associados a um registro de vital_sign."""
+    stmt = select(ClinicalScore.score_value, ClinicalScore.algorithm_version).where(
+        ClinicalScore.vital_sign_id == vital_sign_id,
+        ClinicalScore.score_type == "NEWS2",
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    if row is None:
+        return None, None
+    # Derive risk_category from score_value (mirrors NEWS2Result.risk_category)
+    score = row.score_value
+    if score >= 7:
+        risk = "high"
+    elif score >= 5:
+        risk = "medium"
+    else:
+        risk = "low"
+    return score, risk

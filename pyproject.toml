@@ -130,7 +130,7 @@ warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = [
-    "hl7apy.*
+    "hl7apy.*",
     "fhir.resources.*",
     "factory.*",
     "faker.*",

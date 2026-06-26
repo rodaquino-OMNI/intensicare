@@ -2,7 +2,7 @@
 Testes de integração para ingestão de sinais vitais e status do paciente.
 
 Cobre:
-- POST /api/v1/vitals com criação de sinais vitais e MEWS
+- POST /api/v1/vitals com criação de sinais vitais, MEWS e NEWS2
 - Idempotência com X-Idempotency-Key
 - GET /api/v1/patients/{mpi_id}/status
 - Validação de entrada (Pydantic)
@@ -39,7 +39,7 @@ VALID_VITALS_PAYLOAD = {
 
 @pytest.mark.asyncio
 async def test_create_vitals_normal(client: AsyncClient):
-    """POST /api/v1/vitals deve criar sinais vitais e retornar MEWS."""
+    """POST /api/v1/vitals deve criar sinais vitais e retornar MEWS + NEWS2."""
     response = await client.post("/api/v1/vitals", json=VALID_VITALS_PAYLOAD)
 
     assert response.status_code == 201
@@ -49,6 +49,11 @@ async def test_create_vitals_normal(client: AsyncClient):
     assert isinstance(data["id"], int)
     assert data["mews_score"] is not None
     assert data["mews_score"] >= 0
+    # NEWS2 assertions
+    assert data["news2_score"] is not None
+    assert data["news2_score"] >= 0
+    assert data["news2_risk_category"] is not None
+    assert data["news2_risk_category"] in ("low", "medium", "high")
     assert data["message"] == "Vital signs ingested successfully"
     assert "recorded_at" in data
     assert "ingested_at" in data
@@ -66,6 +71,8 @@ async def test_create_vitals_minimal_payload(client: AsyncClient):
     assert response.status_code == 201
     data = response.json()
     assert data["mews_score"] == 0  # todos os componentes ausentes = 0
+    assert data["news2_score"] == 0  # NEWS2 também deve ser 0
+    assert data["news2_risk_category"] == "low"
 
 
 @pytest.mark.asyncio
@@ -89,6 +96,9 @@ async def test_create_vitals_septic_patient(client: AsyncClient):
     assert response.status_code == 201
     data = response.json()
     assert data["mews_score"] == 8  # 2+1+2+2+1
+    # NEWS2: rr=28(3) + spo2=92(2) + o2=True(2) + sbp=95(2) + hr=115(2) + avpu=V(3) + temp=38.9(1) = 15
+    assert data["news2_score"] == 15
+    assert data["news2_risk_category"] == "high"
 
 
 @pytest.mark.asyncio
@@ -107,6 +117,9 @@ async def test_create_vitals_critical_patient(client: AsyncClient):
     response = await client.post("/api/v1/vitals", json=payload)
     assert response.status_code == 201
     assert response.json()["mews_score"] == 15
+    # NEWS2: rr=6(3) + spo2=None(0) + o2=None(0) + sbp=65(3) + hr=35(3) + avpu=U(3) + temp=34.0(3) = 15
+    assert response.json()["news2_score"] == 15
+    assert response.json()["news2_risk_category"] == "high"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -139,6 +152,8 @@ async def test_idempotency_duplicate_request(client: AsyncClient):
     # Deve retornar o mesmo ID
     assert data2["id"] == data1["id"]
     assert data2["mews_score"] == data1["mews_score"]
+    assert data2["news2_score"] == data1["news2_score"]
+    assert data2["news2_risk_category"] == data1["news2_risk_category"]
     assert "idempotent" in data2["message"].lower()
 
 
@@ -362,3 +377,194 @@ async def test_patient_status_trend_improving(client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["trend"]["current_trend"] == "decreasing"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NEWS2 Dual Scoring — integration tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_news2_normal_vitals_low_risk(client: AsyncClient):
+    """NEWS2 com todos os parâmetros normais deve retornar score 0 e risk low."""
+    response = await client.post("/api/v1/vitals", json=VALID_VITALS_PAYLOAD)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["news2_score"] == 0
+    assert data["news2_risk_category"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_news2_medium_risk(client: AsyncClient):
+    """NEWS2 com score 5-6 deve retornar risk_category medium."""
+    payload = {
+        "mpi_id": "MPI-NEWS2-MEDIUM",
+        "recorded_at": "2026-06-26T10:00:00Z",
+        "heart_rate": 115,       # NEWS2: 111-130 = 2
+        "systolic_bp": 100,      # NEWS2: 91-100 = 2
+        "respiratory_rate": 10,  # NEWS2: 9-11 = 1
+        "temperature": 37.0,     # NEWS2: 0
+        "spo2": 96,              # NEWS2: ≥96 = 0
+        "avpu": "A",             # NEWS2: 0
+        "supplemental_o2": False, # NEWS2: 0
+    }
+    # Total = 2+2+1+0+0+0+0 = 5 → medium
+    response = await client.post("/api/v1/vitals", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["news2_score"] == 5
+    assert data["news2_risk_category"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_news2_high_risk(client: AsyncClient):
+    """NEWS2 com score >= 7 deve retornar risk_category high."""
+    payload = {
+        "mpi_id": "MPI-NEWS2-HIGH",
+        "recorded_at": "2026-06-26T10:00:00Z",
+        "heart_rate": 135,       # NEWS2: ≥131 = 3
+        "systolic_bp": 85,       # NEWS2: ≤90 = 3
+        "respiratory_rate": 30,  # NEWS2: ≥25 = 3
+        "temperature": 34.0,     # NEWS2: ≤35.0 = 3
+        "spo2": 85,              # NEWS2: ≤91 = 3
+        "avpu": "U",             # NEWS2: 3
+        "supplemental_o2": True, # NEWS2: 2
+    }
+    # Total = 3+3+3+3+3+3+2 = 20 → high
+    response = await client.post("/api/v1/vitals", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["news2_score"] == 20
+    assert data["news2_risk_category"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_news2_supplemental_o2_adds_two_points(client: AsyncClient):
+    """NEWS2: uso de O2 suplementar deve adicionar 2 pontos."""
+    # Sem O2
+    payload_no_o2 = {
+        "mpi_id": "MPI-O2-TEST",
+        "recorded_at": "2026-06-26T10:00:00Z",
+        "heart_rate": 75,
+        "systolic_bp": 120,
+        "respiratory_rate": 16,
+        "temperature": 37.0,
+        "spo2": 98,
+        "avpu": "A",
+        "supplemental_o2": False,
+    }
+    resp1 = await client.post(
+        "/api/v1/vitals", json=payload_no_o2,
+        headers={"X-Idempotency-Key": "o2-test-1"},
+    )
+    assert resp1.json()["news2_score"] == 0
+
+    # Com O2 — deve ser 2 maior
+    payload_o2 = {**payload_no_o2, "supplemental_o2": True}
+    resp2 = await client.post(
+        "/api/v1/vitals", json=payload_o2,
+        headers={"X-Idempotency-Key": "o2-test-2"},
+    )
+    assert resp2.json()["news2_score"] == 2
+
+
+@pytest.mark.asyncio
+async def test_news2_default_hypercapnic_false(client: AsyncClient):
+    """NEWS2 usa Scale 1 (non-hypercapnic) por padrão."""
+    # SpO2=88 na Scale 1 = 3 pontos (≤91), na Scale 2 seria 1 (88-92)
+    payload = {
+        "mpi_id": "MPI-SPO2-SCALE1",
+        "recorded_at": "2026-06-26T10:00:00Z",
+        "heart_rate": 75,
+        "systolic_bp": 120,
+        "respiratory_rate": 16,
+        "temperature": 37.0,
+        "spo2": 88,
+        "avpu": "A",
+        "supplemental_o2": False,
+    }
+    response = await client.post("/api/v1/vitals", json=payload)
+    assert response.status_code == 201
+    # SpO2=88 on Scale 1 should score 3
+    assert response.json()["news2_score"] == 3
+
+
+@pytest.mark.asyncio
+async def test_news2_avpu_scores_three_for_altered(client: AsyncClient):
+    """NEWS2: qualquer estado alterado de consciência (C/V/P/U) = 3 pontos."""
+    for avpu_val in ("C", "V", "P", "U"):
+        payload = {
+            "mpi_id": "MPI-AVPU-NEWS2",
+            "recorded_at": f"2026-06-26T10:00:00Z",
+            "heart_rate": 75,
+            "systolic_bp": 120,
+            "respiratory_rate": 16,
+            "temperature": 37.0,
+            "spo2": 98,
+            "avpu": avpu_val,
+            "supplemental_o2": False,
+        }
+        resp = await client.post(
+            "/api/v1/vitals", json=payload,
+            headers={"X-Idempotency-Key": f"avpu-news2-{avpu_val}"},
+        )
+        assert resp.json()["news2_score"] == 3, f"AVPU={avpu_val} should score 3"
+
+
+@pytest.mark.asyncio
+async def test_dual_scoring_both_scores_present(client: AsyncClient):
+    """Cada ingestão deve produzir ambos MEWS e NEWS2 como ClinicalScore separados."""
+    payload = {
+        "mpi_id": "MPI-DUAL-01",
+        "recorded_at": "2026-06-26T10:00:00Z",
+        "heart_rate": 110,
+        "systolic_bp": 95,
+        "respiratory_rate": 24,
+        "temperature": 38.5,
+        "spo2": 92,
+        "avpu": "V",
+        "supplemental_o2": True,
+    }
+    response = await client.post("/api/v1/vitals", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+
+    # Both scores present and non-None
+    assert data["mews_score"] is not None
+    assert data["news2_score"] is not None
+    assert data["news2_risk_category"] is not None
+
+    # MEWS and NEWS2 use different algorithms, so scores differ
+    # MEWS: hr=110(1) + sbp=95(1) + rr=24(2) + temp=38.5(1) + avpu=V(1) = 6
+    assert data["mews_score"] == 6
+    # NEWS2: rr=24(2) + spo2=92(2) + o2=True(2) + sbp=95(2) + hr=110(1) + avpu=V(3) + temp=38.5(1) = 13
+    assert data["news2_score"] == 13
+    assert data["news2_risk_category"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_dual_scoring_idempotent_replay_returns_both_scores(client: AsyncClient):
+    """Replay idempotente deve retornar ambos MEWS e NEWS2."""
+    payload = {
+        "mpi_id": "MPI-DUAL-IDEM",
+        "recorded_at": "2026-06-26T10:00:00Z",
+        "heart_rate": 110,
+        "systolic_bp": 95,
+        "respiratory_rate": 24,
+        "temperature": 38.5,
+        "spo2": 92,
+        "avpu": "V",
+        "supplemental_o2": True,
+    }
+    headers = {"X-Idempotency-Key": "dual-idem-key"}
+
+    resp1 = await client.post("/api/v1/vitals", json=payload, headers=headers)
+    assert resp1.status_code == 201
+    data1 = resp1.json()
+
+    resp2 = await client.post("/api/v1/vitals", json=payload, headers=headers)
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+
+    assert data2["mews_score"] == data1["mews_score"]
+    assert data2["news2_score"] == data1["news2_score"]
+    assert data2["news2_risk_category"] == data1["news2_risk_category"]

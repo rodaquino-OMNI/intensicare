@@ -81,6 +81,12 @@ class VitalSignResponse(BaseModel):
     mews_score: int | None = Field(
         None, description="MEWS calculado (None se dados insuficientes)"
     )
+    news2_score: int | None = Field(
+        None, description="NEWS2 calculado (None se dados insuficientes)"
+    )
+    news2_risk_category: str | None = Field(
+        None, description="Categoria de risco NEWS2: low, medium, high"
+    )
     message: str = Field(
         default="Vital signs ingested successfully",
         description="Mensagem de status",

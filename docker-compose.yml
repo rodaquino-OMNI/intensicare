@@ -72,7 +72,6 @@ services:
       - ./src:/app/src:delegated
       - ./tests:/app/tests:delegated
       - ./alembic:/app/alembic:delegated
-      - ./pyproject.toml:/app/pyproject.toml:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,6 +83,43 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks:
+      - intensicare-net
+
+  # ---------------------------------------------------------------------------
+  # MLLP Listener — receives HL7 v2 ORU-R01 over TCP/MLLP (port 2575)
+  # ---------------------------------------------------------------------------
+  mllp-listener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: intensicare-mllp:dev
+    container_name: intensicare-mllp
+    restart: unless-stopped
+    ports:
+      - "${MLLP_PORT:-2575}:2575"
+    env_file:
+      - .env
+    environment:
+      API_URL: "http://api:8000/api/v1"
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    volumes:
+      - ./src:/app/src:delegated
+      - ./pyproject.toml:/app/pyproject.toml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - intensicare.mllp_listener
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "2575"
+      - --api-url
+      - "http://api:8000/api/v1"
     networks:
       - intensicare-net
 

@@ -68,10 +68,6 @@ class Settings(BaseSettings):
             return f"redis://:{pw}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
-    # JWT settings
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60
-    jwt_refresh_expire_days: int = 7
 
 @lru_cache
 def get_settings() -> Settings:
