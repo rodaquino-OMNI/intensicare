@@ -35,7 +35,7 @@
 
 ```bash
 # Clonar o repositório
-git clone <repo-url> intensicare
+git clone https://github.com/Omni-Saude/intensicare.git
 cd intensicare
 
 # Subir banco + Redis + API + frontend
