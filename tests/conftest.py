@@ -172,6 +172,18 @@ from datetime import datetime, timedelta, timezone
 from jose import jwt
 
 from intensicare.auth.jwt import create_access_token, create_refresh_token
+from intensicare.config import settings
+
+# Gera token JWT diretamente com a secret conhecida
+def _make_test_token(sub: str, user_id: int) -> str:
+    from datetime import datetime, timedelta, timezone
+    from jose import jwt as jose_jwt
+    expire = datetime.now(timezone.utc) + timedelta(minutes=60)
+    return jose_jwt.encode(
+        {"sub": sub, "user_id": user_id, "exp": expire, "type": "access"},
+        settings.secret_key.get_secret_value(),
+        algorithm="HS256",
+    )
 from intensicare.models.user import User
 from passlib.context import CryptContext
 
@@ -224,16 +236,14 @@ async def regular_user(db_session: AsyncSession) -> User:
 @pytest.fixture
 def admin_headers(admin_user: User) -> dict[str, str]:
     """Authorization header with a valid JWT for an admin user."""
-    token = create_access_token({"sub": admin_user.username, "user_id": admin_user.id})
+    token = _make_test_token(admin_user.username, admin_user.id or 1)
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
 def user_headers(regular_user: User) -> dict[str, str]:
     """Authorization header with a valid JWT for a regular user."""
-    token = create_access_token(
-        {"sub": regular_user.username, "user_id": regular_user.id}
-    )
+    token = _make_test_token(regular_user.username, regular_user.id or 2)
     return {"Authorization": f"Bearer {token}"}
 
 
