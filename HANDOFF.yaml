@@ -117,8 +117,22 @@ blocked:
     title: "review-queue.md: audit_trail marcado como IMPLEMENTADO (falso)"
     severity: medium
     description: "docs/review-queue.md linha 26 afirma que audit_trail está IMPLEMENTADO. Não existe tabela, modelo ou trigger."
-    resolution: "Corrigir review-queue.md para PENDENTE. Remover claim falso."
+    resolution: "Corrigir review-queue.md para PENDENTE. Remover claim falso. ✅ CORRIGIDO em 2026-06-26."
     deadline: "Imediato"
+
+  - id: "AUDIT-007"
+    title: "API contract mismatch: GET /api/v1/alerts array vs frontend objeto"
+    severity: medium
+    description: "Backend retorna list[AlertResponse] direto. Frontend AlertListResponse espera {alerts: AlertInfo[], total: number}."
+    resolution: "Alinhar contrato: backend wrappar em objeto ou frontend consumir array puro."
+    deadline: "Fase 2"
+
+  - id: "AUDIT-008"
+    title: "Severity enum mismatch: backend watch/urgent/critical vs frontend info/warning/critical"
+    severity: medium
+    description: "BedGrid usa 'warning' que não existe no backend. Sorting de severidade quebrado."
+    resolution: "Padronizar severity enum entre backend e frontend."
+    deadline: "Fase 2"
 
 completed:
   - id: "MVP-001"

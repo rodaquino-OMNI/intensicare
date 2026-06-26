@@ -196,4 +196,4 @@ Os seguintes itens devem ser adicionados/atualizados no HANDOFF.yaml:
 ---
 
 *Auditoria conduzida por equipe de 4 agentes especialistas em 26 de junho de 2026.*  
-*Próxima auditoria recomendada: após implementação dos 4 itens críticos.*
+*Próxima auditoria recomendada: após implementação dos 4 itens críticos (MEWS, NEWS2 Scale 2, audit_trail, pgcrypto).*
