@@ -23,7 +23,7 @@
 
 | # | Item | Status | Notas |
 |---|------|--------|-------|
-| T1 | **Tabela audit_trail** | IMPLEMENTADO | Trilha de auditoria imutável via trigger no banco. |
+| T1 | **Tabela audit_trail** | ❌ PENDENTE | Trilha de auditoria imutável via trigger no banco. AUDIT-004: não implementado. Nenhuma tabela, modelo ou trigger existe. |
 | T2 | **Idempotência de ingestão** | IMPLEMENTADO | Via `X-Idempotency-Key` (MSH-10). IdempotencyStore em memória (dev), Redis planejado (prod). |
 | T3 | **Versionamento de algoritmos** | IMPLEMENTADO | Coluna `algorithm_version` em `clinical_score`. |
 | T4 | **Criptografia em repouso** | PENDENTE | `pgcrypto` para PHI (nome, CPF, CNS) — não implementado ainda. |

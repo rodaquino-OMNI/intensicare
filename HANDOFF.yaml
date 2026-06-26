@@ -77,6 +77,49 @@ blocked:
     resolution: "Configurar Caddy como reverse proxy com Let's Encrypt."
     deadline: "Fase 3"
 
+  # --- AUDIT FINDINGS (2026-06-26) ---
+  - id: "AUDIT-001"
+    title: "MEWS scoring: 3 parâmetros inflados vs Subbe 2001"
+    severity: critical
+    description: "Heart rate ≤40 (3 vs 2), HR 41-50 (2 vs 1), RR ≤8 (3 vs 2), Temp ≤35.0 (3 vs 2). Copiados do NEWS2 em vez do MEWS original."
+    resolution: "Corrigir thresholds baixos para Subbe 2001. Atualizar algorithm_version para MEWS-v1.0.1."
+    deadline: "Antes do piloto clínico"
+
+  - id: "AUDIT-002"
+    title: "NEWS2 Scale 2 (hypercapnic): 5 boundary errors + O2 integration gap"
+    severity: critical
+    description: "Bandas 86-87% (2 vs 1) e 88-92% (1 vs 0) deslocadas vs RCP 2017. SpO2≥93% em O2 não integrado corretamente."
+    resolution: "Corrigir score_spo2() para RCP 2017 Scale 2. Adicionar parâmetro supplemental_o2."
+    deadline: "Antes do piloto clínico"
+
+  - id: "AUDIT-003"
+    title: "SOFA: dual risk-classification paths inconsistent"
+    severity: medium
+    description: "Live path e idempotent-replay path usam thresholds e formatos diferentes para mortalidade."
+    resolution: "Unificar classificação de risco em single source of truth."
+    deadline: "Fase 2"
+
+  - id: "AUDIT-004"
+    title: "Invariante #5: Health check sem verificações de dependências"
+    severity: high
+    description: "/health retorna estático — não verifica PostgreSQL nem Redis. Se banco cair, health check ainda diz 'healthy'."
+    resolution: "Adicionar SELECT 1 no PostgreSQL e redis.ping() ao health check."
+    deadline: "Antes do piloto clínico"
+
+  - id: "AUDIT-005"
+    title: "Invariante #6: Retry/backoff não implementado"
+    severity: high
+    description: "tenacity é dead dependency (instalado, nunca importado). Nenhum retry para notificações de alerta."
+    resolution: "Implementar ARQ worker ou tenacity retry decorator para alert delivery."
+    deadline: "Fase 2"
+
+  - id: "AUDIT-006"
+    title: "review-queue.md: audit_trail marcado como IMPLEMENTADO (falso)"
+    severity: medium
+    description: "docs/review-queue.md linha 26 afirma que audit_trail está IMPLEMENTADO. Não existe tabela, modelo ou trigger."
+    resolution: "Corrigir review-queue.md para PENDENTE. Remover claim falso."
+    deadline: "Imediato"
+
 completed:
   - id: "MVP-001"
     title: "MEWS scoring engine"
