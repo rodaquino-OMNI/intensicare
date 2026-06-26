@@ -12,36 +12,30 @@ ENV PYTHONUNBUFFERED=1 \
     LOG_LEVEL=DEBUG
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential libpq-dev curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Instala dependências diretamente (sem build system)
-RUN pip install --upgrade pip setuptools wheel \
+# Runtime dependencies
+RUN pip install --upgrade pip \
     && pip install \
-        "fastapi[standard]>=0.115,<1.0" \
-        "uvicorn[standard]>=0.30,<1.0" \
-        "sqlalchemy[asyncio]>=2.0,<3.0" \
-        "alembic>=1.13,<2.0" \
-        "asyncpg>=0.29,<1.0" \
-        "redis[hiredis]>=5.0,<6.0" \
-        "pydantic>=2.7,<3.0" \
-        "pydantic-settings>=2.2,<3.0" \
-        "python-hl7>=0.4,<1.0" \
-        "fhir.resources>=7.1,<8.0" \
-        "httpx>=0.27,<1.0" \
-        "python-multipart>=0.0.9,<1.0" \
-        "tenacity>=8.3,<9.0" \
-        "python-jose[cryptography]>=3.3,<4.0" \
-        "passlib[bcrypt]>=1.7,<2.0" \
-    && pip install \
-        "pytest>=8.2,<9.0" \
-        "pytest-asyncio>=0.23,<1.0" \
-        "pytest-cov>=5.0,<6.0" \
-        "ruff>=0.4,<1.0" \
-        "mypy>=1.10,<2.0" \
-        "pre-commit>=3.7,<4.0"
+        "fastapi[standard]" \
+        "uvicorn[standard]" \
+        "sqlalchemy[asyncio]" \
+        alembic \
+        asyncpg \
+        "redis[hiredis]" \
+        pydantic \
+        pydantic-settings \
+        python-hl7 \
+        httpx \
+        python-multipart \
+        tenacity \
+        "python-jose[cryptography]" \
+        "passlib[bcrypt]"
+
+# Dev dependencies
+RUN pip install pytest pytest-asyncio pytest-cov ruff mypy pre-commit
 
 COPY src/ ./src/
 COPY tests/ ./tests/
@@ -62,32 +56,28 @@ ENV PYTHONUNBUFFERED=1 \
     ENVIRONMENT=production
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev curl \
-    && rm -rf /var/lib/apt/lists/*
+    libpq-dev curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 RUN pip install --upgrade pip \
     && pip install \
-        "fastapi[standard]>=0.115,<1.0" \
-        "uvicorn[standard]>=0.30,<1.0" \
-        "sqlalchemy[asyncio]>=2.0,<3.0" \
-        "alembic>=1.13,<2.0" \
-        "asyncpg>=0.29,<1.0" \
-        "redis[hiredis]>=5.0,<6.0" \
-        "pydantic>=2.7,<3.0" \
-        "pydantic-settings>=2.2,<3.0" \
-        "python-hl7>=0.4,<1.0" \
-        "fhir.resources>=7.1,<8.0" \
-        "httpx>=0.27,<1.0" \
-        "python-multipart>=0.0.9,<1.0" \
-        "tenacity>=8.3,<9.0" \
-        "python-jose[cryptography]>=3.3,<4.0" \
-        "passlib[bcrypt]>=1.7,<2.0"
+        "fastapi[standard]" \
+        "uvicorn[standard]" \
+        "sqlalchemy[asyncio]" \
+        alembic \
+        asyncpg \
+        "redis[hiredis]" \
+        pydantic \
+        pydantic-settings \
+        python-hl7 \
+        httpx \
+        tenacity \
+        "python-jose[cryptography]" \
+        "passlib[bcrypt]"
 
 COPY src/ ./src/
 COPY alembic/ ./alembic/
-COPY pyproject.toml ./
 
 RUN groupadd -r intensicare && useradd -r -g intensicare -d /app -s /sbin/nologin intensicare \
     && chown -R intensicare:intensicare /app

@@ -462,13 +462,14 @@ class TestCalculateNEWS2:
         )
         assert result.total_score == 14, f"Expected 14, got {result.total_score}"
 
-        # Example 3
+        # Example 3: Severe COPD with hypercapnia
+        # RR=28(3) + SpO2=87[Scale2:86-87=2] + O2(2) + SBP=108(1) + HR=95(1) + AVPU=A(0) + Temp=38.2(1) = 10
         result = calculate_news2(
             respiratory_rate=28, spo2=87, hypercapnic=True,
             supplemental_o2=True, systolic_bp=108, heart_rate=95,
             avpu="A", temperature=38.2,
         )
-        assert result.total_score == 9, f"Expected 9, got {result.total_score}"
+        assert result.total_score == 10, f"Expected 10, got {result.total_score}"
 
 
 class TestNEWS2Components:

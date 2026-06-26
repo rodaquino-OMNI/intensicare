@@ -78,11 +78,13 @@ def create_app() -> FastAPI:
         vitals_router,
         patients_router,
     )
+    from intensicare.api.thresholds import router as thresholds_router
 
     app.include_router(auth_router)
     app.include_router(alerts_router)
     app.include_router(vitals_router, prefix="/api/v1", tags=["vitals"])
     app.include_router(patients_router, prefix="/api/v1", tags=["patients"])
+    app.include_router(thresholds_router)
 
     return app
 
