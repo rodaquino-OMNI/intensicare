@@ -62,7 +62,7 @@ def upgrade() -> None:
         sa.Column("supplemental_o2", sa.Boolean(), nullable=True),
         sa.Column("source_system", sa.String(32), nullable=True),
         sa.Column("ingested_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", "recorded_at"),
     )
     op.create_index("ix_vital_sign_mpi_id", "vital_sign", ["mpi_id"])
     # TimescaleDB hypertable
@@ -85,7 +85,7 @@ def upgrade() -> None:
         sa.Column("components", postgresql.JSONB(), nullable=True),
         sa.Column("trend", sa.String(16), nullable=True),
         sa.Column("delta_from_previous", sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", "calculated_at"),
     )
     op.create_index("ix_clinical_score_mpi_id", "clinical_score", ["mpi_id"])
     # TimescaleDB hypertable
@@ -110,7 +110,7 @@ def upgrade() -> None:
         sa.Column("acknowledged_by", sa.String(255), nullable=True),
         sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("resolution", sa.String(32), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", "created_at"),
     )
     op.create_index("ix_alert_mpi_id", "alert", ["mpi_id"])
     # TimescaleDB hypertable

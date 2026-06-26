@@ -41,6 +41,7 @@ RUN pip install pytest pytest-asyncio pytest-cov ruff mypy pre-commit
 COPY src/ ./src/
 COPY tests/ ./tests/
 COPY alembic/ ./alembic/
+COPY alembic.ini .
 COPY pyproject.toml ./
 
 EXPOSE 8000
@@ -80,6 +81,7 @@ RUN pip install --upgrade pip \
 
 COPY src/ ./src/
 COPY alembic/ ./alembic/
+COPY alembic.ini .
 
 RUN groupadd -r intensicare && useradd -r -g intensicare -d /app -s /sbin/nologin intensicare \
     && chown -R intensicare:intensicare /app

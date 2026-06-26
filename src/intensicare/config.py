@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     api_workers: int = 1
     cors_origins: list[str] = ["*"]
 
-    # JWT settings
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
     jwt_refresh_expire_days: int = 7

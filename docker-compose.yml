@@ -64,6 +64,7 @@ services:
     env_file:
       - .env
     environment:
+      PYTHONPATH: /app/src
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-intensicare}:${POSTGRES_PASSWORD:-intensicare_dev}@postgres:5432/${POSTGRES_DB:-intensicare}"
       REDIS_URL: "redis://redis:6379/0"
       ENVIRONMENT: development
