@@ -1,8 +1,30 @@
 # Intensicare Platform 🏥⚡
 
-Intensicare is an enterprise-grade, cloud-native platform that continuously monitors ICU patients, calculates real-time risk scores, and delivers actionable insights to clinical teams. Built for hospitals, by clinicians and engineers who understand that **every second matters** in critical care.
+> ⚠️ **STATUS: Conceptual Design / Pre-Development (Junho 2026)**
+>
+> Este repositório contém a visão de produto e especificação técnica para o Intensicare.
+> **Nenhum código foi implementado ainda.** Toda a arquitetura, endpoints de API, e instruções
+> de deploy descritas abaixo são aspiracionais e representam o estado-alvo desejado.
+>
+> O Intensicare será projetado para operar como consumidor especializado da **AMH Data Platform**
+> (`Omni-Saude/amh-data-platform`) — a infraestrutura de dados corporativa da Americas Health.
+> Veja [`docs/analysis/technical-review-2026.md`](docs/analysis/technical-review-2026.md) para a
+> análise técnica completa e o roadmap de desenvolvimento.
+>
+> **Stack-alvo:** FastAPI + PostgreSQL/TimescaleDB + Redis, integrado ao lakehouse Apache Iceberg
+> e ao servidor HAPI FHIR R4 da AMH Data Platform.
 
-## 🚀 Quick Start
+Intensicare is a clinical decision support platform that continuously monitors ICU patients, calculates real-time risk scores, and delivers actionable insights to clinical teams. Built for hospitals, by clinicians and engineers who understand that **every second matters** in critical care.
+
+## 📋 Quick Navigation
+
+| Para | Vá para |
+|------|---------|
+| **Visão do produto** | [`docs/product/vision.md`](docs/product/vision.md) |
+| **Análise técnica completa** | [`docs/analysis/technical-review-2026.md`](docs/analysis/technical-review-2026.md) |
+| **Roadmap de desenvolvimento** | [`docs/analysis/technical-review-2026.md#8-development-roadmap`](docs/analysis/technical-review-2026.md#8-development-roadmap) |
+| **Arquitetura-alvo** | [`docs/analysis/technical-review-2026.md#5-proposed-target-architecture`](docs/analysis/technical-review-2026.md#5-proposed-target-architecture) |
+| **AMH Data Platform** | [`Omni-Saude/amh-data-platform`](https://github.com/Omni-Saude/amh-data-platform) |
 
 ```bash
 # Clone the repository

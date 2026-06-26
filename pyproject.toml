@@ -1,0 +1,178 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "intensicare"
+version = "0.1.0"
+description = "Plataforma de monitoramento contínuo para UTI — FastAPI + TimescaleDB + Redis"
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Intensicare Team", email = "dev@intensicare.io"},
+]
+keywords = ["icu", "clinical-monitoring", "fastapi", "healthcare"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Healthcare Industry",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: FastAPI",
+    "Topic :: Scientific/Engineering :: Medical Science Apps",
+]
+
+dependencies = [
+    "fastapi[standard]>=0.115,<1.0",
+    "uvicorn[standard]>=0.30,<1.0",
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "alembic>=1.13,<2.0",
+    "asyncpg>=0.29,<1.0",
+    "redis[hiredis]>=5.0,<6.0",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.2,<3.0",
+    "python-hl7>=0.4,<1.0",
+    "fhir.resources>=7.1,<8.0",
+    "httpx>=0.27,<1.0",
+    "python-multipart>=0.0.9,<1.0",
+    "tenacity>=8.3,<9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "pytest-cov>=5.0,<6.0",
+    "httpx>=0.27,<1.0",
+    "ruff>=0.4,<1.0",
+    "mypy>=1.10,<2.0",
+    "pre-commit>=3.7,<4.0",
+    "factory-boy>=3.3,<4.0",
+    "faker>=25.0,<26.0",
+    "testcontainers>=4.6,<5.0",
+]
+lint = [
+    "ruff>=0.4,<1.0",
+    "mypy>=1.10,<2.0",
+]
+test = [
+    "pytest>=8.2,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "pytest-cov>=5.0,<6.0",
+    "httpx>=0.27,<1.0",
+    "factory-boy>=3.3,<4.0",
+    "faker>=25.0,<26.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/intensicare"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    # pyflakes
+    "F",
+    # pycodestyle
+    "E", "W",
+    # isort
+    "I",
+    # flake8-bugbear
+    "B",
+    # flake8-comprehensions
+    "C4",
+    # flake8-simplify
+    "SIM",
+    # flake8-return
+    "RET",
+    # flake8-unused-arguments
+    "ARG",
+    # flake8-bandit (security)
+    "S",
+    # pylint
+    "PL",
+    # ruff-specific
+    "RUF",
+]
+ignore = [
+    # allow assert in tests
+    "S101",
+    # allow TODOs
+    "TD002", "TD003",
+    # too many arguments — acceptable in config/setup functions
+    "PLR0913",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["intensicare"]
+force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "python_hl7.*",
+    "fhir.resources.*",
+    "factory.*",
+    "faker.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src/intensicare",
+    "--cov-report=term-missing",
+    "--cov-report=xml:coverage.xml",
+    "--asyncio-mode=auto",
+]
+testpaths = ["tests"]
+markers = [
+    "slow: marca testes lentos (deselected por padrão, use --run-slow)",
+    "integration: testes que requerem dependências externas (banco, redis)",
+]
+
+[tool.coverage.run]
+source = ["intensicare"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pragma: no cover",
+]
+
+[tool.alembic]
+script_location = "alembic"
+sqlalchemy.url = "postgresql+asyncpg://intensicare:intensicare_dev@localhost:5432/intensicare"
+
+[tool.hatch.envs.default]
+dependencies = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+]

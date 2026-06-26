@@ -1,0 +1,357 @@
+# =============================================================================
+# Intensicare — CI/CD Pipeline
+# GitHub Actions: lint → test → security-scan → build → (deploy)
+# =============================================================================
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to staging after build?"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  POETRY_VERSION: "1.8"
+  DOCKER_IMAGE: ghcr.io/${{ github.repository }}/api
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 1 — Lint & Type Check
+  # ═══════════════════════════════════════════════════════════════════════════
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[lint]"
+
+      - name: Ruff — Linter
+        run: ruff check src tests
+
+      - name: Ruff — Format check
+        run: ruff format --check src tests
+
+      - name: MyPy — Static type checking
+        run: mypy src/intensicare
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 2 — Test (matriz Python 3.12 + 3.13)
+  # ═══════════════════════════════════════════════════════════════════════════
+  test:
+    name: Test — Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    services:
+      postgres:
+        image: timescale/timescaledb:2.18.0-pg16
+        env:
+          POSTGRES_USER: intensicare
+          POSTGRES_PASSWORD: intensicare_test
+          POSTGRES_DB: intensicare_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Wait for PostgreSQL
+        timeout-minutes: 1
+        run: |
+          until pg_isready -h localhost -U intensicare -d intensicare_test; do
+            sleep 1
+          done
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://intensicare:intensicare_test@localhost:5432/intensicare_test
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: ci
+          LOG_LEVEL: WARNING
+        run: |
+          pytest tests/ \
+            -v \
+            --cov=src/intensicare \
+            --cov-report=xml:coverage-${{ matrix.python-version }}.xml \
+            --cov-report=term-missing \
+            --asyncio-mode=auto
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage-${{ matrix.python-version }}.xml
+          retention-days: 7
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 3 — Coverage Report (unifica relatórios da matriz)
+  # ═══════════════════════════════════════════════════════════════════════════
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: test
+    if: always() && needs.test.result != 'cancelled'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-artifacts/
+          pattern: coverage-*
+          merge-multiple: false
+
+      - name: Combine coverage reports
+        run: |
+          python -m pip install --upgrade pip
+          pip install coverage
+          # Mergea todos os XMLs
+          for f in coverage-artifacts/coverage-*/coverage-*.xml; do
+            cp "$f" "coverage_$RANDOM.xml"
+          done
+          # Sumariza no console
+          echo "### Test Coverage Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo '| Python | Coverage |' >> $GITHUB_STEP_SUMMARY
+          echo '|--------|----------|' >> $GITHUB_STEP_SUMMARY
+          for ver in 3.12 3.13; do
+            xml="coverage-artifacts/coverage-${ver}/coverage-${ver}.xml"
+            if [ -f "$xml" ]; then
+              pct=$(grep -oP 'line-rate="\K[0-9.]+' "$xml" | head -1)
+              if [ -n "$pct" ]; then
+                pct_pct=$(python3 -c "print(f'{float($pct)*100:.1f}%')")
+                echo "| $ver | $pct_pct |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 4 — Security Scan
+  # ═══════════════════════════════════════════════════════════════════════════
+  security:
+    name: Security Scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: lint
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit pip-audit
+
+      - name: Bandit — SAST analysis
+        run: |
+          bandit -r src/ \
+            -f sarif \
+            -o bandit-results.sarif \
+            --severity-level medium \
+            || true
+
+      - name: Upload Bandit SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+      - name: pip-audit — Dependency scan
+        run: pip-audit --require-hashes --strict || true
+
+      - name: Trivy — Filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 5 — Build & Push Docker Image
+  # ═══════════════════════════════════════════════════════════════════════════
+  build:
+    name: Build & Push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: [test, security]
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
+      github.event_name == 'workflow_dispatch'
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Signature — Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          for tag in $TAGS; do
+            cosign sign --yes "$tag"
+          done
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 6 — Deploy to Staging (manual ou via workflow_dispatch)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-staging:
+    name: Deploy — Staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: build
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
+    environment:
+      name: staging
+      url: https://staging.api.intensicare.io
+
+    steps:
+      - name: Deploy placeholder
+        run: |
+          echo "## 🚀 Deploy to Staging" >> $GITHUB_STEP_SUMMARY
+          echo "Image: ${{ needs.build.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo ""
+          echo "⚠️  Configure as credenciais do cluster Kubernetes e execute o deploy real."
+          echo "    - helm upgrade intensicare intensicare/platform --set image.tag=${{ needs.build.outputs.image_tag }}"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 7 — Release (triggered by tags)
+  # ═══════════════════════════════════════════════════════════════════════════
+  release:
+    name: Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate changelog
+        run: |
+          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --oneline --no-merges > CHANGELOG.md
+          echo "## Release ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          cat CHANGELOG.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') }}

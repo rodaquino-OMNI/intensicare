@@ -1,0 +1,141 @@
+# =============================================================================
+# Intensicare — Ambiente de Desenvolvimento Local
+# Stack: FastAPI + PostgreSQL 16 (TimescaleDB 2.x) + Redis 7
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — FastAPI com uvicorn (hot-reload em dev)
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: intensicare-api:dev
+    container_name: intensicare-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-intensicare}:${POSTGRES_PASSWORD:-intensicare_dev}@postgres:5432/${POSTGRES_DB:-intensicare}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+    volumes:
+      - ./src:/app/src:delegated
+      - ./tests:/app/tests:delegated
+      - ./alembic:/app/alembic:delegated
+      - ./pyproject.toml:/app/pyproject.toml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - intensicare-net
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + TimescaleDB 2.x
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: timescale/timescaledb:2.17-pg16
+    container_name: intensicare-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-intensicare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-intensicare_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-intensicare}
+      TIMESCALEDB_TELEMETRY: "off"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/01-init-timescaledb.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-intensicare} -d ${POSTGRES_DB:-intensicare}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - intensicare-net
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — cache, filas, pub/sub
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: intensicare-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - intensicare-net
+
+  # ---------------------------------------------------------------------------
+  # Test runner (opcional, para CI local)
+  # ---------------------------------------------------------------------------
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: intensicare-api:dev
+    container_name: intensicare-tests
+    profiles:
+      - testing
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-intensicare}:${POSTGRES_PASSWORD:-intensicare_dev}@postgres:5432/${POSTGRES_DB:-intensicare}_test
+      - REDIS_URL=redis://redis:6379/1
+      - ENVIRONMENT=testing
+      - LOG_LEVEL=WARNING
+    volumes:
+      - ./src:/app/src:delegated
+      - ./tests:/app/tests:delegated
+      - ./pyproject.toml:/app/pyproject.toml:ro
+    command: pytest -v --cov=src/intensicare --cov-report=term-missing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - intensicare-net
+
+# ---------------------------------------------------------------------------
+# Volumes persistentes
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    name: intensicare-postgres-data
+  redis_data:
+    name: intensicare-redis-data
+
+# ---------------------------------------------------------------------------
+# Rede interna
+# ---------------------------------------------------------------------------
+networks:
+  intensicare-net:
+    name: intensicare-net
+    driver: bridge

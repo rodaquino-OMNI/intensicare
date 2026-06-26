@@ -1,0 +1,127 @@
+# =============================================================================
+# Intensicare — Pre-commit Hooks
+# =============================================================================
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Verificações gerais de arquivos
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of file newline
+      - id: check-yaml
+        name: Validate YAML syntax
+        args: [--allow-multiple-documents]
+      - id: check-json
+        name: Validate JSON syntax
+      - id: check-toml
+        name: Validate TOML syntax
+      - id: check-added-large-files
+        name: Block large file commits (>500KB)
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+        name: Check for merge conflict markers
+      - id: check-case-conflict
+        name: Check for case-insensitive filename conflicts
+      - id: detect-private-key
+        name: Detect accidentally committed private keys
+      - id: mixed-line-ending
+        name: Normalize line endings to LF
+        args: [--fix=lf]
+      - id: no-commit-to-branch
+        name: Block direct commits to main/master
+        args: [--branch, main, --branch, master]
+
+  # ---------------------------------------------------------------------------
+  # Ruff — linter + formatter (substitui flake8, isort, black)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        name: Ruff lint
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+        name: Ruff format
+
+  # ---------------------------------------------------------------------------
+  # MyPy — verificação de tipagem estática
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: MyPy type check
+        args: [--strict]
+        additional_dependencies:
+          - pydantic>=2.7
+          - sqlalchemy>=2.0
+          - types-redis>=4.6
+        files: ^src/
+        pass_filenames: true
+
+  # ---------------------------------------------------------------------------
+  # Bandit — análise de segurança
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.2
+    hooks:
+      - id: bandit
+        name: Bandit security scan
+        args: [--config=pyproject.toml, --severity-level=medium]
+        files: ^src/
+
+  # ---------------------------------------------------------------------------
+  # Commit message lint
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        name: Conventional commit message check
+        stages: [commit-msg]
+        args:
+          [
+            feat,
+            fix,
+            docs,
+            style,
+            refactor,
+            perf,
+            test,
+            build,
+            ci,
+            chore,
+            revert,
+            security,
+          ]
+
+  # ---------------------------------------------------------------------------
+  # Secrets detection
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets in code
+        args: [--baseline, .secrets.baseline]
+        exclude: >
+          (?x)^(
+            .secrets.baseline|
+            tests/.*fixtures?/.*|
+            .*\.lock$
+          )$
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto-fixes from pre-commit hooks
+
+    For more info, see: https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_schedule: monthly
+  skip: []
+  submodules: false

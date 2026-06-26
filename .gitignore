@@ -1,0 +1,62 @@
+# .gitignore — Intensicare
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+.venv/
+venv/
+.env
+.env.*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Docker
+docker-compose.override.yml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Node (dashboard)
+node_modules/
+.next/
+out/
+
+# Logs
+*.log
+logs/
+
+# Data
+*.db
+*.sqlite3
+data/fixtures/*.csv
+!data/fixtures/sample*.csv
