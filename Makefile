@@ -119,15 +119,7 @@ dev-status: ## Status dos serviços Docker
 	$(COMPOSE) ps
 	@echo ""
 	@echo "$(CYAN)Health checks:$(NC)"
-	@$(COMPOSE) ps --format json 2>/dev/null | python3 -c "
-import json, sys
-for line in sys.stdin:
-    s = json.loads(line)
-    name = s.get('Name', '?')
-    status = s.get('State', '?')
-    health = s.get('Health', 'N/A')
-    print(f'  {name:30s} → {status} ({health})')
-" 2>/dev/null || echo "  (docker compose ps não retornou dados)"
+	@$(COMPOSE) ps --format json 2>/dev/null | python3 -c "import json,sys;[print(f'  {json.loads(l).get(\"Name\",\"?\"):30s} → {json.loads(l).get(\"State\",\"?\")} ({json.loads(l).get(\"Health\",\"N/A\")})') for l in sys.stdin]" 2>/dev/null || echo "  (docker compose ps não retornou dados)"
 
 .PHONY: dev-clean
 dev-clean: ## Remove containers, volumes e redes Docker
@@ -140,27 +132,47 @@ dev-clean: ## Remove containers, volumes e redes Docker
 # ═══════════════════════════════════════════════════════════════════════════
 
 .PHONY: test
-test: ## Executa todos os testes (exceto slow)
+test: test-docker ## Executa todos os testes dentro do container Docker
+
+.PHONY: test-local
+test-local: ## Executa todos os testes localmente (requer venv + dependências)
 	$(VENV)/bin/$(PYTEST) $(TEST_DIR) -v
 
 .PHONY: test-all
-test-all: ## Executa todos os testes, inclusive os lentos
-	$(VENV)/bin/$(PYTEST) $(TEST_DIR) -v --run-slow
-
-.PHONY: test-cov
-test-cov: ## Executa testes com relatório de cobertura
-	$(VENV)/bin/$(PYTEST) $(TEST_DIR) -v \
-		--cov=$(SRC_DIR)/intensicare \
-		--cov-report=html \
-		--cov-report=term-missing
-	@echo "$(GREEN)[test]$(NC) ✓ Relatório HTML: htmlcov/index.html"
+test-all: ## Executa todos os testes, inclusive os lentos (Docker)
+	$(COMPOSE) exec api pytest $(TEST_DIR) -v --run-slow
 
 .PHONY: test-docker
-test-docker: ## Executa testes no container Docker
-	$(COMPOSE) --profile testing run --rm tests
+test-docker: ## Executa todos os testes dentro do container Docker
+	@echo "$(GREEN)[test]$(NC) Executando todos os testes no container..."
+	$(COMPOSE) exec api pytest $(TEST_DIR) -v
+
+.PHONY: test-scoring
+test-scoring: ## Executa apenas os testes de scoring (MEWS, NEWS2, qSOFA, SOFA) no Docker
+	@echo "$(GREEN)[test]$(NC) Executando testes de scoring..."
+	$(COMPOSE) exec api pytest $(TEST_DIR) \
+		$(TEST_DIR)/test_mews.py \
+		$(TEST_DIR)/test_news2.py \
+		$(TEST_DIR)/test_qsofa.py \
+		$(TEST_DIR)/test_sofa.py \
+		-v
+
+.PHONY: test-integration
+test-integration: ## Executa apenas os testes de integração (marcados com @pytest.mark.integration) no Docker
+	@echo "$(GREEN)[test]$(NC) Executando testes de integração..."
+	$(COMPOSE) exec api pytest $(TEST_DIR) -v -m integration
+
+.PHONY: test-cov
+test-cov: ## Executa testes com relatório de cobertura no Docker
+	@echo "$(GREEN)[test]$(NC) Executando testes com cobertura..."
+	$(COMPOSE) exec api pytest $(TEST_DIR) -v \
+		--cov=src/intensicare \
+		--cov-report=html \
+		--cov-report=term-missing
+	@echo "$(GREEN)[test]$(NC) ✓ Relatório HTML: htmlcov/index.html (dentro do container em /app/htmlcov)"
 
 .PHONY: test-watch
-test-watch: ## Executa testes com re-execução em mudanças (requer ptw)
+test-watch: ## Executa testes com re-execução em mudanças (requer ptw, local)
 	$(VENV)/bin/ptw -- $(TEST_DIR) -v
 
 # ═══════════════════════════════════════════════════════════════════════════

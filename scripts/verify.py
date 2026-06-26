@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Intensicare — Import chain validator.
+Intensicare — Import chain and pytest collection validator.
 
-Validates that every module in the intensicare package is importable.
+Validates that:
+1. Every module in the intensicare package is importable.
+2. pytest can collect the test suite without errors.
+
 Runs with the current Python environment (venv or system) and verifies
-the integrity of the source-tree import graph.
+the integrity of the source-tree import graph and test suite.
 
-Exit code 0 = all good. Non-zero = broken imports (stderr has details).
+Exit code 0 = all good. Non-zero = broken imports or test collection (stderr has details).
 """
 
 import importlib
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -76,7 +80,7 @@ MODULES: Sequence[str] = (
 )
 
 
-def verify() -> int:
+def verify_imports() -> int:
     """Try to import every module and report results. Returns exit code."""
     failures: list[tuple[str, str]] = []
     successes: list[str] = []
@@ -103,6 +107,84 @@ def verify() -> int:
         return 1
 
     return 0
+
+
+def verify_pytest_collection() -> int:
+    """Run `pytest --collect-only` to validate test discovery.
+
+    Uses the pytest from the current Python environment. The test suite
+    is collected without executing any tests. All warnings are surfaced.
+
+    Returns 0 if collection succeeds, 1 on failure.
+    """
+    tests_dir = ROOT / "tests"
+    if not tests_dir.is_dir():
+        print(f"✗ Tests directory not found: {tests_dir}")
+        return 1
+
+    # Build the pytest command — use the same Python interpreter to find pytest
+    python_exe = sys.executable
+    cmd = [python_exe, "-m", "pytest", str(tests_dir), "--collect-only", "-q"]
+    print(f"[pytest collection] Running: {' '.join(cmd)}\n")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=120,
+        )
+    except FileNotFoundError:
+        print("✗ pytest not found. Install it with: pip install pytest pytest-asyncio")
+        return 1
+    except subprocess.TimeoutExpired:
+        print("✗ pytest collection timed out (120s)")
+        return 1
+
+    # Print output for diagnostics
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
+
+    if result.returncode == 0:
+        # Extract test count from output if possible
+        print("✓ pytest collection succeeded.\n")
+        return 0
+    else:
+        print(f"✗ pytest collection failed (exit code {result.returncode}).\n")
+        return 1
+
+
+def verify() -> int:
+    """Run all validations. Returns combined exit code."""
+    print("=" * 60)
+    print("  Intensicare — Verification Suite")
+    print("=" * 60)
+    print()
+
+    exit_code = 0
+
+    # 1. Import verification
+    print("── 1. Import Verification ──")
+    if verify_imports() != 0:
+        exit_code = 1
+
+    # 2. Pytest collection verification
+    print("── 2. Pytest Collection Verification ──")
+    if verify_pytest_collection() != 0:
+        exit_code = 1
+
+    # Summary
+    print("=" * 60)
+    if exit_code == 0:
+        print("✓ All verifications passed.")
+    else:
+        print("✗ Some verifications failed. See details above.")
+    print("=" * 60)
+
+    return exit_code
 
 
 if __name__ == "__main__":

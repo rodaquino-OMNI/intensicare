@@ -152,6 +152,7 @@ testpaths = ["tests"]
 markers = [
     "slow: marca testes lentos (deselected por padrão, use --run-slow)",
     "integration: testes que requerem dependências externas (banco, redis)",
+    "scoring: testes de scoring clínico (MEWS, NEWS2, qSOFA, SOFA)",
 ]
 
 [tool.coverage.run]

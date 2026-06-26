@@ -8,11 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from intensicare.models.threshold_config import ThresholdConfig
 
 
-ADMIN_HEADERS = {"Authorization": "Bearer testadmin:admin"}
-USER_HEADERS = {"Authorization": "Bearer testuser:user"}
-NO_AUTH_HEADERS: dict[str, str] = {}
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # Authorization tests
 # ════════════════════════════════════════════════════════════════════════════
@@ -20,22 +15,24 @@ NO_AUTH_HEADERS: dict[str, str] = {}
 class TestThresholdAuth:
     """Verify that only admin users can access threshold endpoints."""
 
-    async def test_list_requires_auth(self, client: AsyncClient):
+    async def test_list_requires_auth(self, client: AsyncClient, no_auth_headers):
         """No token = 401."""
-        response = await client.get("/api/v1/thresholds")
+        response = await client.get("/api/v1/thresholds", headers=no_auth_headers)
         assert response.status_code == 401
 
-    async def test_list_requires_admin_role(self, client: AsyncClient):
+    async def test_list_requires_admin_role(
+        self, client: AsyncClient, user_headers
+    ):
         """User role (non-admin) = 403."""
-        response = await client.get("/api/v1/thresholds", headers=USER_HEADERS)
+        response = await client.get("/api/v1/thresholds", headers=user_headers)
         assert response.status_code == 403
 
-    async def test_list_accepts_admin(self, client: AsyncClient):
+    async def test_list_accepts_admin(self, client: AsyncClient, admin_headers):
         """Admin role = 200."""
-        response = await client.get("/api/v1/thresholds", headers=ADMIN_HEADERS)
+        response = await client.get("/api/v1/thresholds", headers=admin_headers)
         assert response.status_code == 200
 
-    async def test_create_requires_admin(self, client: AsyncClient):
+    async def test_create_requires_admin(self, client: AsyncClient, user_headers):
         """POST requires admin."""
         payload = {
             "tenant_id": "tenant-1",
@@ -45,7 +42,7 @@ class TestThresholdAuth:
             "critical_threshold": 7,
         }
         response = await client.post(
-            "/api/v1/thresholds", json=payload, headers=USER_HEADERS
+            "/api/v1/thresholds", json=payload, headers=user_headers
         )
         assert response.status_code == 403
 
@@ -57,7 +54,9 @@ class TestThresholdAuth:
 class TestThresholdCRUD:
     """Test full CRUD lifecycle for threshold configurations."""
 
-    async def test_create_threshold(self, client: AsyncClient, db_session: AsyncSession):
+    async def test_create_threshold(
+        self, client: AsyncClient, db_session: AsyncSession, admin_headers
+    ):
         """Create a new threshold configuration."""
         payload = {
             "tenant_id": "tenant-1",
@@ -70,7 +69,7 @@ class TestThresholdCRUD:
             "cooldown_minutes": 30,
         }
         response = await client.post(
-            "/api/v1/thresholds", json=payload, headers=ADMIN_HEADERS
+            "/api/v1/thresholds", json=payload, headers=admin_headers
         )
         assert response.status_code == 201
         data = response.json()
@@ -86,7 +85,7 @@ class TestThresholdCRUD:
         assert data["updated_at"] is not None
         assert "id" in data
 
-    async def test_create_threshold_minimal(self, client: AsyncClient):
+    async def test_create_threshold_minimal(self, client: AsyncClient, admin_headers):
         """Create with only required fields."""
         payload = {
             "tenant_id": "tenant-2",
@@ -96,7 +95,7 @@ class TestThresholdCRUD:
             "critical_threshold": 8,
         }
         response = await client.post(
-            "/api/v1/thresholds", json=payload, headers=ADMIN_HEADERS
+            "/api/v1/thresholds", json=payload, headers=admin_headers
         )
         assert response.status_code == 201
         data = response.json()
@@ -104,7 +103,7 @@ class TestThresholdCRUD:
         assert data["rate_limit_per_hour"] is None
         assert data["cooldown_minutes"] is None
 
-    async def test_list_thresholds(self, client: AsyncClient):
+    async def test_list_thresholds(self, client: AsyncClient, admin_headers):
         """List all threshold configs."""
         # Create a couple first
         for i in range(3):
@@ -117,26 +116,28 @@ class TestThresholdCRUD:
                     "urgent_threshold": 5,
                     "critical_threshold": 7,
                 },
-                headers=ADMIN_HEADERS,
+                headers=admin_headers,
             )
 
-        response = await client.get("/api/v1/thresholds", headers=ADMIN_HEADERS)
+        response = await client.get("/api/v1/thresholds", headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 3
 
-    async def test_list_thresholds_filter_by_tenant(self, client: AsyncClient):
+    async def test_list_thresholds_filter_by_tenant(
+        self, client: AsyncClient, admin_headers
+    ):
         """Filter thresholds by tenant_id query param."""
         response = await client.get(
-            "/api/v1/thresholds?tenant_id=tenant-0", headers=ADMIN_HEADERS
+            "/api/v1/thresholds?tenant_id=tenant-0", headers=admin_headers
         )
         assert response.status_code == 200
         data = response.json()
         for item in data:
             assert item["tenant_id"] == "tenant-0"
 
-    async def test_get_threshold_by_id(self, client: AsyncClient):
+    async def test_get_threshold_by_id(self, client: AsyncClient, admin_headers):
         """Get a single threshold by ID."""
         # Create one first
         create_resp = await client.post(
@@ -148,24 +149,24 @@ class TestThresholdCRUD:
                 "urgent_threshold": 4,
                 "critical_threshold": 6,
             },
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         threshold_id = create_resp.json()["id"]
 
         response = await client.get(
-            f"/api/v1/thresholds/{threshold_id}", headers=ADMIN_HEADERS
+            f"/api/v1/thresholds/{threshold_id}", headers=admin_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == threshold_id
         assert data["tenant_id"] == "tenant-get"
 
-    async def test_get_threshold_not_found(self, client: AsyncClient):
+    async def test_get_threshold_not_found(self, client: AsyncClient, admin_headers):
         """404 for non-existent threshold."""
-        response = await client.get("/api/v1/thresholds/99999", headers=ADMIN_HEADERS)
+        response = await client.get("/api/v1/thresholds/99999", headers=admin_headers)
         assert response.status_code == 404
 
-    async def test_update_threshold(self, client: AsyncClient):
+    async def test_update_threshold(self, client: AsyncClient, admin_headers):
         """Update an existing threshold."""
         # Create
         create_resp = await client.post(
@@ -177,7 +178,7 @@ class TestThresholdCRUD:
                 "urgent_threshold": 4,
                 "critical_threshold": 6,
             },
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         threshold_id = create_resp.json()["id"]
 
@@ -191,7 +192,7 @@ class TestThresholdCRUD:
         response = await client.put(
             f"/api/v1/thresholds/{threshold_id}",
             json=update_payload,
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         assert response.status_code == 200
         data = response.json()
@@ -202,16 +203,18 @@ class TestThresholdCRUD:
         assert data["tenant_id"] == "tenant-update"  # Unchanged
         assert data["score_type"] == "MEWS"  # Unchanged
 
-    async def test_update_threshold_not_found(self, client: AsyncClient):
+    async def test_update_threshold_not_found(
+        self, client: AsyncClient, admin_headers
+    ):
         """404 on update of non-existent threshold."""
         response = await client.put(
             "/api/v1/thresholds/99999",
             json={"watch_threshold": 5},
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         assert response.status_code == 404
 
-    async def test_update_requires_admin(self, client: AsyncClient):
+    async def test_update_requires_admin(self, client: AsyncClient, admin_headers, user_headers):
         """403 for non-admin update."""
         create_resp = await client.post(
             "/api/v1/thresholds",
@@ -222,18 +225,18 @@ class TestThresholdCRUD:
                 "urgent_threshold": 4,
                 "critical_threshold": 6,
             },
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         threshold_id = create_resp.json()["id"]
 
         response = await client.put(
             f"/api/v1/thresholds/{threshold_id}",
             json={"watch_threshold": 5},
-            headers=USER_HEADERS,
+            headers=user_headers,
         )
         assert response.status_code == 403
 
-    async def test_delete_threshold(self, client: AsyncClient):
+    async def test_delete_threshold(self, client: AsyncClient, admin_headers):
         """Delete a threshold configuration."""
         # Create
         create_resp = await client.post(
@@ -245,30 +248,30 @@ class TestThresholdCRUD:
                 "urgent_threshold": 4,
                 "critical_threshold": 6,
             },
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         threshold_id = create_resp.json()["id"]
 
         # Delete
         response = await client.delete(
-            f"/api/v1/thresholds/{threshold_id}", headers=ADMIN_HEADERS
+            f"/api/v1/thresholds/{threshold_id}", headers=admin_headers
         )
         assert response.status_code == 204
 
         # Verify gone
         response = await client.get(
-            f"/api/v1/thresholds/{threshold_id}", headers=ADMIN_HEADERS
+            f"/api/v1/thresholds/{threshold_id}", headers=admin_headers
         )
         assert response.status_code == 404
 
-    async def test_delete_not_found(self, client: AsyncClient):
+    async def test_delete_not_found(self, client: AsyncClient, admin_headers):
         """404 for delete of non-existent threshold."""
         response = await client.delete(
-            "/api/v1/thresholds/99999", headers=ADMIN_HEADERS
+            "/api/v1/thresholds/99999", headers=admin_headers
         )
         assert response.status_code == 404
 
-    async def test_delete_requires_admin(self, client: AsyncClient):
+    async def test_delete_requires_admin(self, client: AsyncClient, admin_headers, user_headers):
         """403 for non-admin delete."""
         create_resp = await client.post(
             "/api/v1/thresholds",
@@ -279,16 +282,18 @@ class TestThresholdCRUD:
                 "urgent_threshold": 4,
                 "critical_threshold": 6,
             },
-            headers=ADMIN_HEADERS,
+            headers=admin_headers,
         )
         threshold_id = create_resp.json()["id"]
 
         response = await client.delete(
-            f"/api/v1/thresholds/{threshold_id}", headers=USER_HEADERS
+            f"/api/v1/thresholds/{threshold_id}", headers=user_headers
         )
         assert response.status_code == 403
 
-    async def test_validation_rejects_negative_thresholds(self, client: AsyncClient):
+    async def test_validation_rejects_negative_thresholds(
+        self, client: AsyncClient, admin_headers
+    ):
         """Pydantic validation rejects negative threshold values."""
         payload = {
             "tenant_id": "tenant-1",
@@ -298,7 +303,7 @@ class TestThresholdCRUD:
             "critical_threshold": 7,
         }
         response = await client.post(
-            "/api/v1/thresholds", json=payload, headers=ADMIN_HEADERS
+            "/api/v1/thresholds", json=payload, headers=admin_headers
         )
         assert response.status_code == 422
 

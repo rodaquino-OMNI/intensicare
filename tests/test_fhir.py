@@ -412,16 +412,9 @@ class TestPatientServiceFHIREnrichment:
     """Test the patient service with FHIR enrichment on/off."""
 
     @pytest.mark.anyio
-    async def test_enrich_skipped_when_fhir_not_configured(
-        self, db_session: AsyncMock
-    ) -> None:
+    async def test_enrich_skipped_when_fhir_not_configured(self) -> None:
         """When FHIR_BASE_URL is empty, enrichment returns None."""
         from intensicare.services.patients import _enrich_from_fhir
-
-        with patch.object(
-            _enrich_from_fhir, "__wrapped__", _enrich_from_fhir
-        ):
-            pass
 
         # Patch settings so fhir_base_url is empty
         with patch("intensicare.services.patients.settings") as mock_settings:
@@ -431,18 +424,13 @@ class TestPatientServiceFHIREnrichment:
 
     @pytest.mark.anyio
     async def test_get_patient_status_without_enrich(
-        self, db_session: AsyncMock
+        self, mock_db_session: AsyncMock
     ) -> None:
         """When enrich=False, fhir field stays None."""
         from intensicare.services.patients import get_patient_status
 
-        # We need to mock db queries — return no data to keep test simple
-        mock_db = AsyncMock()
-        mock_db.execute.return_value.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value.fetchall.return_value = []
-
         result = await get_patient_status(
-            db=mock_db, mpi_id="MPI-12345", score_type="MEWS", enrich=False
+            db=mock_db_session, mpi_id="MPI-12345", score_type="MEWS", enrich=False
         )
 
         assert result.fhir is None
@@ -450,25 +438,10 @@ class TestPatientServiceFHIREnrichment:
 
     @pytest.mark.anyio
     async def test_get_patient_status_with_enrich_success(
-        self, db_session: AsyncMock
+        self, mock_db_session: AsyncMock
     ) -> None:
         """When enrich=True and FHIR returns data, fhir field is populated."""
         from intensicare.services.patients import get_patient_status
-
-        mock_db = AsyncMock()
-        mock_db.execute.return_value.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value.fetchall.return_value = []
-
-        mock_fhir_data = FHIRPatientData(
-            mpi_id="MPI-12345",
-            display_name="João Silva",
-            gender="male",
-            birth_date=date(1965, 3, 15),
-            marital_status="Married",
-            condition_list=["Hypertension"],
-            allergy_list=["Penicillin"],
-            latest_observations={"Weight": {"value": 78.5, "unit": "kg"}},
-        )
 
         with patch(
             "intensicare.services.patients._enrich_from_fhir",
@@ -482,7 +455,10 @@ class TestPatientServiceFHIREnrichment:
             ),
         ):
             result = await get_patient_status(
-                db=mock_db, mpi_id="MPI-12345", score_type="MEWS", enrich=True
+                db=mock_db_session,
+                mpi_id="MPI-12345",
+                score_type="MEWS",
+                enrich=True,
             )
 
         assert result.fhir is not None
@@ -500,9 +476,11 @@ class TestPatientStatusAPI:
     """Test the /patients/{mpi_id}/status endpoint with enrich parameter."""
 
     @pytest.mark.anyio
-    async def test_status_without_enrich(self, client: httpx.AsyncClient) -> None:
+    async def test_status_without_enrich(
+        self, mock_client: httpx.AsyncClient
+    ) -> None:
         """GET without enrich returns no fhir field."""
-        response = await client.get("/api/v1/patients/MPI-NOEXIST/status")
+        response = await mock_client.get("/api/v1/patients/MPI-NOEXIST/status")
         assert response.status_code == 200
         data = response.json()
         assert data["mpi_id"] == "MPI-NOEXIST"
@@ -511,12 +489,12 @@ class TestPatientStatusAPI:
 
     @pytest.mark.anyio
     async def test_status_with_enrich_fhir_not_configured(
-        self, client: httpx.AsyncClient
+        self, mock_client: httpx.AsyncClient
     ) -> None:
         """GET with enrich=true but empty FHIR_BASE_URL — fhir stays null."""
         with patch("intensicare.services.patients.settings") as mock_settings:
             mock_settings.fhir_base_url = ""
-            response = await client.get(
+            response = await mock_client.get(
                 "/api/v1/patients/MPI-NOEXIST/status", params={"enrich": "true"}
             )
         assert response.status_code == 200
@@ -525,7 +503,7 @@ class TestPatientStatusAPI:
 
     @pytest.mark.anyio
     async def test_status_with_enrich_configured(
-        self, client: httpx.AsyncClient
+        self, mock_client: httpx.AsyncClient
     ) -> None:
         """GET with enrich=true and FHIR configured — enrichment is attempted."""
         mock_fhir = FHIREnrichment(
@@ -538,7 +516,7 @@ class TestPatientStatusAPI:
             "intensicare.services.patients._enrich_from_fhir",
             return_value=mock_fhir,
         ):
-            response = await client.get(
+            response = await mock_client.get(
                 "/api/v1/patients/MPI-NOEXIST/status",
                 params={"enrich": "true"},
             )
