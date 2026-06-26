@@ -17,10 +17,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intensicare.models import ClinicalScore, VitalSign
+from intensicare.models import Alert, ClinicalScore, VitalSign
 from intensicare.schemas.vitals import VitalSignCreate, VitalSignResponse
+from intensicare.services.alert_engine import process_clinical_score
 from intensicare.services.mews import calculate_mews, compute_trend, MEWS_VERSION
 from intensicare.services.news2 import calculate_news2
+from intensicare.services.sofa import calculate_sofa, SOFA_VERSION
+from intensicare.services.qsofa import calculate_qsofa, QSOFA_VERSION
 
 
 class IdempotencyStore:
@@ -94,15 +97,16 @@ async def ingest_vitals(
     db: AsyncSession,
     data: VitalSignCreate,
     idempotency_key: str | None = None,
-) -> VitalSignResponse:
-    """Ingere sinais vitais com idempotência e dispara scoring MEWS síncrono.
+) -> tuple[VitalSignResponse, list[Alert]]:
+    """Ingere sinais vitais com idempotência, scoring e alert engine.
 
     Fluxo:
     1. Verifica idempotency key (se fornecida) — retorna resultado existente.
     2. Persiste registro em vital_sign.
-    3. Calcula MEWS sincronamente.
-    4. Persiste clinical_score com versão do algoritmo.
-    5. Armazena idempotency key para requisições futuras.
+    3. Calcula MEWS, NEWS2, SOFA, qSOFA sincronamente.
+    4. Persiste clinical_scores com versão do algoritmo.
+    5. Executa alert engine para cada score e coleta alertas gerados.
+    6. Armazena idempotency key para requisições futuras.
 
     Args:
         db: Sessão assíncrona do SQLAlchemy.
@@ -110,7 +114,7 @@ async def ingest_vitals(
         idempotency_key: Chave de idempotência (MSH-10 / X-Idempotency-Key).
 
     Returns:
-        VitalSignResponse com ID do registro e MEWS calculado.
+        Tuple of (VitalSignResponse, list of created Alert objects).
     """
     store = get_idempotency_store()
 
@@ -124,6 +128,8 @@ async def ingest_vitals(
         if existing is not None:
             mews_score = await _get_mews_for_vital(db, stored_id)
             news2_score, news2_risk = await _get_news2_for_vital(db, stored_id)
+            sofa_score, sofa_risk = await _get_sofa_for_vital(db, stored_id)
+            qsofa_score, qsofa_high_risk = await _get_qsofa_for_vital(db, stored_id)
             return VitalSignResponse(
                 id=existing.id,
                 mpi_id=existing.mpi_id,
@@ -132,8 +138,12 @@ async def ingest_vitals(
                 mews_score=mews_score,
                 news2_score=news2_score,
                 news2_risk_category=news2_risk,
+                sofa_score=sofa_score,
+                sofa_mortality_risk=sofa_risk,
+                qsofa_score=qsofa_score,
+                qsofa_is_high_risk=qsofa_high_risk,
                 message="Idempotent replay — vital signs already ingested",
-            )
+            ), []
 
     # 2. Persiste sinais vitais
     now = datetime.now(timezone.utc)
@@ -150,6 +160,17 @@ async def ingest_vitals(
         supplemental_o2=data.supplemental_o2,
         source_system=data.source_system,
         ingested_at=now,
+        # Lab fields for SOFA/qSOFA
+        pao2_fio2=data.pao2_fio2,
+        mechanical_ventilation=data.mechanical_ventilation,
+        platelets=data.platelets,
+        bilirubin=data.bilirubin,
+        map_value=data.map_value,
+        vasopressor_type=data.vasopressor_type,
+        vasopressor_dose_mcg_kg_min=data.vasopressor_dose_mcg_kg_min,
+        gcs=data.gcs,
+        creatinine=data.creatinine,
+        urine_output_ml_day=data.urine_output_ml_day,
     )
     db.add(vital)
     await db.flush()  # Obtém o ID sem commitar a transação
@@ -223,7 +244,77 @@ async def ingest_vitals(
     db.add(news2_score)
     await db.flush()
 
-    # 7. Armazena idempotency key
+    # 6b. Calcula e persiste SOFA
+    sofa_result = calculate_sofa(
+        pao2_fio2=data.pao2_fio2,
+        mechanical_ventilation=data.mechanical_ventilation,
+        platelets=data.platelets,
+        bilirubin=data.bilirubin,
+        map_value=data.map_value,
+        vasopressor_type=data.vasopressor_type,
+        vasopressor_dose_mcg_kg_min=data.vasopressor_dose_mcg_kg_min,
+        gcs=data.gcs,
+        creatinine=data.creatinine,
+        urine_output_ml_day=data.urine_output_ml_day,
+    )
+    sofa_score_cs = ClinicalScore(
+        mpi_id=data.mpi_id,
+        score_type="SOFA",
+        score_value=sofa_result.total_score,
+        algorithm_version=SOFA_VERSION,
+        calculated_at=now,
+        vital_sign_id=vital.id,
+        components=asdict(sofa_result.components),
+        trend=None,
+        delta_from_previous=None,
+    )
+    db.add(sofa_score_cs)
+    await db.flush()
+
+    # 6c. Calcula e persiste qSOFA
+    qsofa_result = calculate_qsofa(
+        respiratory_rate=data.respiratory_rate,
+        systolic_bp=data.systolic_bp,
+        gcs=data.gcs,
+    )
+    qsofa_cs = ClinicalScore(
+        mpi_id=data.mpi_id,
+        score_type="qSOFA",
+        score_value=qsofa_result.total_score,
+        algorithm_version=QSOFA_VERSION,
+        calculated_at=now,
+        vital_sign_id=vital.id,
+        components=asdict(qsofa_result.components),
+        trend=None,
+        delta_from_previous=None,
+    )
+    db.add(qsofa_cs)
+    await db.flush()
+
+    # 7. Executa alert engine — verifica thresholds e cria alertas
+    alerts: list[Alert] = []
+
+    # Check MEWS score against thresholds
+    mews_alert = await process_clinical_score(db=db, score=score)
+    if mews_alert is not None:
+        alerts.append(mews_alert)
+
+    # Check NEWS2 score against thresholds
+    news2_alert = await process_clinical_score(db=db, score=news2_score)
+    if news2_alert is not None:
+        alerts.append(news2_alert)
+
+    # Check SOFA score against thresholds
+    sofa_alert = await process_clinical_score(db=db, score=sofa_score_cs)
+    if sofa_alert is not None:
+        alerts.append(sofa_alert)
+
+    # Check qSOFA score against thresholds
+    qsofa_alert = await process_clinical_score(db=db, score=qsofa_cs)
+    if qsofa_alert is not None:
+        alerts.append(qsofa_alert)
+
+    # 8. Armazena idempotency key
     if idempotency_key:
         store.store_key(idempotency_key, vital.id)
 
@@ -235,8 +326,12 @@ async def ingest_vitals(
         mews_score=score_value,
         news2_score=news2_result.total_score,
         news2_risk_category=news2_result.risk_category,
+        sofa_score=sofa_result.total_score,
+        sofa_mortality_risk=sofa_result.sepsis_mortality_risk,
+        qsofa_score=qsofa_result.total_score,
+        qsofa_is_high_risk=qsofa_result.is_high_risk,
         message="Vital signs ingested successfully",
-    )
+    ), alerts
 
 
 async def _get_mews_for_vital(db: AsyncSession, vital_sign_id: int) -> int | None:
@@ -269,3 +364,38 @@ async def _get_news2_for_vital(db: AsyncSession, vital_sign_id: int) -> tuple[in
     else:
         risk = "low"
     return score, risk
+
+
+async def _get_sofa_for_vital(db: AsyncSession, vital_sign_id: int) -> tuple[int | None, str | None]:
+    """Busca o SOFA score e mortality_risk associados a um registro de vital_sign."""
+    stmt = select(ClinicalScore.score_value).where(
+        ClinicalScore.vital_sign_id == vital_sign_id,
+        ClinicalScore.score_type == "SOFA",
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    if row is None:
+        return None, None
+    score = row.score_value
+    if score >= 11:
+        risk = "Very High (>90%)"
+    elif score >= 9:
+        risk = "High (50-90%)"
+    elif score >= 5:
+        risk = "Moderate (20-50%)"
+    else:
+        risk = "Low (<20%)"
+    return score, risk
+
+
+async def _get_qsofa_for_vital(db: AsyncSession, vital_sign_id: int) -> tuple[int | None, bool | None]:
+    """Busca o qSOFA score e is_high_risk associados a um registro de vital_sign."""
+    stmt = select(ClinicalScore.score_value).where(
+        ClinicalScore.vital_sign_id == vital_sign_id,
+        ClinicalScore.score_type == "qSOFA",
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    if row is None:
+        return None, None
+    return row.score_value, row.score_value >= 2 if row.score_value is not None else None

@@ -56,6 +56,37 @@ class VitalSignCreate(BaseModel):
     source_system: str | None = Field(
         None, max_length=32, description="Sistema de origem (ex: tasy, philips_monitor)"
     )
+    # ── Lab values for SOFA scoring (all optional) ─────────────────
+    pao2_fio2: float | None = Field(
+        None, ge=0, le=800, description="PaO2/FiO2 ratio (mmHg)"
+    )
+    mechanical_ventilation: bool = Field(
+        False, description="Paciente em ventilação mecânica"
+    )
+    platelets: float | None = Field(
+        None, ge=0, description="Plaquetas (×10³/µL)"
+    )
+    bilirubin: float | None = Field(
+        None, ge=0, description="Bilirrubina total (mg/dL)"
+    )
+    map_value: float | None = Field(
+        None, ge=0, le=250, description="Pressão arterial média — MAP (mmHg)"
+    )
+    vasopressor_type: str | None = Field(
+        None, max_length=32, description="Tipo de vasopressor (dopamine, dobutamine, epinephrine, norepinephrine)"
+    )
+    vasopressor_dose_mcg_kg_min: float | None = Field(
+        None, ge=0, description="Dose do vasopressor (µg/kg/min)"
+    )
+    gcs: int | None = Field(
+        None, ge=3, le=15, description="Glasgow Coma Scale (3-15)"
+    )
+    creatinine: float | None = Field(
+        None, ge=0, description="Creatinina sérica (mg/dL)"
+    )
+    urine_output_ml_day: float | None = Field(
+        None, ge=0, description="Débito urinário 24h (mL/dia)"
+    )
 
     @field_validator("avpu")
     @classmethod
@@ -86,6 +117,18 @@ class VitalSignResponse(BaseModel):
     )
     news2_risk_category: str | None = Field(
         None, description="Categoria de risco NEWS2: low, medium, high"
+    )
+    sofa_score: int | None = Field(
+        None, description="SOFA calculado (0-24, None se dados insuficientes)"
+    )
+    sofa_mortality_risk: str | None = Field(
+        None, description="Risco de mortalidade SOFA: low, moderate, high, very_high"
+    )
+    qsofa_score: int | None = Field(
+        None, description="qSOFA calculado (0-3, None se dados insuficientes)"
+    )
+    qsofa_is_high_risk: bool | None = Field(
+        None, description="qSOFA ≥ 2 indica alto risco de sepse"
     )
     message: str = Field(
         default="Vital signs ingested successfully",

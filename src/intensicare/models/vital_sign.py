@@ -30,3 +30,14 @@ class VitalSign(Base):
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    # ── Lab fields for SOFA/qSOFA scoring ──────────────────────
+    pao2_fio2: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    mechanical_ventilation: Mapped[bool] = mapped_column(Boolean, default=False)
+    platelets: Mapped[float | None] = mapped_column(Numeric(8, 1))
+    bilirubin: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    map_value: Mapped[float | None] = mapped_column(Numeric(6, 1))
+    vasopressor_type: Mapped[str | None] = mapped_column(String(32))
+    vasopressor_dose_mcg_kg_min: Mapped[float | None] = mapped_column(Numeric(8, 3))
+    gcs: Mapped[int | None] = mapped_column(Integer)
+    creatinine: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    urine_output_ml_day: Mapped[float | None] = mapped_column(Numeric(10, 1))

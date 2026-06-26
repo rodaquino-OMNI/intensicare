@@ -4,10 +4,12 @@ Aplicacao principal FastAPI — Intensicare.
 Inicializa a aplicacao, registra rotas, middlewares e handlers de ciclo de vida.
 """
 
+import json
+
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -25,9 +27,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     from intensicare.core.database import get_engine
     from intensicare.core.redis import get_redis
+    from intensicare.core.websocket import get_websocket_manager
 
     get_engine()  # Init DB engine
     get_redis()  # Init Redis client
+    get_websocket_manager()  # Init WebSocket manager
     app.state.started = True
 
     yield
@@ -71,10 +75,62 @@ def create_app() -> FastAPI:
             }
         )
 
+    # WebSocket endpoint for real-time alerts
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket) -> None:
+        from intensicare.core.websocket import get_websocket_manager
+
+        manager = get_websocket_manager()
+        await manager.connect(websocket)
+
+        try:
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    message = json.loads(data)
+                except json.JSONDecodeError:
+                    await manager.send_error(
+                        websocket, "Invalid JSON message"
+                    )
+                    continue
+
+                action = message.get("action")
+                patient_id = message.get("patient_id")
+
+                if action == "subscribe" and patient_id:
+                    await manager.subscribe(websocket, patient_id)
+                    await websocket.send_json(
+                        {
+                            "type": "subscribed",
+                            "patient_id": patient_id,
+                        }
+                    )
+                elif action == "unsubscribe" and patient_id:
+                    await manager.unsubscribe(websocket, patient_id)
+                    await websocket.send_json(
+                        {
+                            "type": "unsubscribed",
+                            "patient_id": patient_id,
+                        }
+                    )
+                elif action == "ping":
+                    await websocket.send_json({"type": "pong"})
+                else:
+                    await manager.send_error(
+                        websocket,
+                        f"Unknown action: {action}. "
+                        "Supported: subscribe, unsubscribe, ping",
+                    )
+        except WebSocketDisconnect:
+            pass
+        finally:
+            manager.disconnect(websocket)
+
     # Register routers
     from intensicare.api.v1 import (
         auth_router,
         alerts_router,
+        dashboard_router,
         vitals_router,
         patients_router,
     )
@@ -82,6 +138,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(alerts_router)
+    app.include_router(dashboard_router)
     app.include_router(vitals_router, prefix="/api/v1", tags=["vitals"])
     app.include_router(patients_router, prefix="/api/v1", tags=["patients"])
     app.include_router(thresholds_router)

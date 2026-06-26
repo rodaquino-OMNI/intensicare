@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from intensicare.core.database import get_db
+from intensicare.core.websocket import get_websocket_manager
 from intensicare.schemas.vitals import VitalSignCreate, VitalSignResponse
 from intensicare.services.vitals import ingest_vitals
 
@@ -42,13 +43,30 @@ async def create_vitals(
         description="Chave de idempotência (MSH-10). Evita duplicação de registros.",
     ),
 ) -> VitalSignResponse:
-    """Ingere sinais vitais com idempotência e scoring MEWS síncrono."""
+    """Ingere sinais vitais com idempotência, scoring e alert engine."""
     try:
-        result = await ingest_vitals(
+        result, alerts = await ingest_vitals(
             db=db,
             data=body,
             idempotency_key=x_idempotency_key,
         )
+
+        # Broadcast any created alerts to WebSocket clients
+        if alerts:
+            manager = get_websocket_manager()
+            for alert in alerts:
+                alert_data = {
+                    "type": "alert",
+                    "id": alert.id,
+                    "mpi_id": alert.mpi_id,
+                    "severity": alert.severity,
+                    "status": alert.status,
+                    "title": alert.title,
+                    "body": alert.body,
+                    "created_at": alert.created_at.isoformat() if alert.created_at else None,
+                }
+                await manager.broadcast_alert(alert_data)
+
         return result
     except Exception as exc:
         raise HTTPException(

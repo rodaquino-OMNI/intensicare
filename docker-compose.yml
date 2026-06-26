@@ -124,6 +124,35 @@ services:
     networks:
       - intensicare-net
 
+  # ---------------------------------------------------------------------------
+  # Frontend — React 18 + TypeScript + Vite (dev server with hot reload)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    image: intensicare-frontend:dev
+    container_name: intensicare-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      VITE_API_TARGET: "http://api:8000"
+      NODE_ENV: development
+    volumes:
+      - ./frontend/src:/app/src:delegated
+      - ./frontend/public:/app/public:delegated
+      - ./frontend/index.html:/app/index.html:delegated
+      - ./frontend/vite.config.ts:/app/vite.config.ts:delegated
+      - ./frontend/tsconfig.json:/app/tsconfig.json:delegated
+      - ./frontend/tsconfig.app.json:/app/tsconfig.app.json:delegated
+      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json:delegated
+    depends_on:
+      - api
+    networks:
+      - intensicare-net
+
 # ---------------------------------------------------------------------------
 # Volumes persistentes
 # ---------------------------------------------------------------------------
