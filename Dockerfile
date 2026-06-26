@@ -27,7 +27,7 @@ RUN pip install --upgrade pip \
         "redis[hiredis]" \
         pydantic \
         pydantic-settings \
-        python-hl7 \
+        hl7apy \
         httpx \
         python-multipart \
         tenacity \
@@ -70,7 +70,7 @@ RUN pip install --upgrade pip \
         "redis[hiredis]" \
         pydantic \
         pydantic-settings \
-        python-hl7 \
+        hl7apy \
         httpx \
         tenacity \
         "python-jose[cryptography]" \
