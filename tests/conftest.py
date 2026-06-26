@@ -92,3 +92,13 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[httpx.AsyncClient, 
 def settings_override():
     """Retorna settings com valores de teste."""
     return get_settings()
+
+
+@pytest.fixture(autouse=True)
+def reset_idempotency_store():
+    """Limpa o IdempotencyStore antes de cada teste."""
+    from intensicare.services.vitals import get_idempotency_store
+    store = get_idempotency_store()
+    store.clear()
+    yield
+    store.clear()

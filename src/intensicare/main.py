@@ -1,7 +1,7 @@
 """
-Aplicação principal FastAPI — Intensicare.
+Aplicacao principal FastAPI — Intensicare.
 
-Inicializa a aplicação, registra rotas, middlewares e handlers de ciclo de vida.
+Inicializa a aplicacao, registra rotas, middlewares e handlers de ciclo de vida.
 """
 
 from contextlib import asynccontextmanager
@@ -17,28 +17,34 @@ from intensicare.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
-    Gerencia o ciclo de vida da aplicação.
+    Gerencia o ciclo de vida da aplicacao.
 
-    - Startup: inicializa conexões com banco e Redis.
-    - Shutdown: fecha conexões gracefulmente.
+    - Startup: inicializa conexoes com banco e Redis.
+    - Shutdown: fecha conexoes gracefulmente.
     """
     # Startup
-    # TODO: Inicializar pool de conexões (engine SQLAlchemy, Redis client)
+    from intensicare.core.database import get_engine
+    from intensicare.core.redis import get_redis
+
+    get_engine()  # Init DB engine
+    get_redis()  # Init Redis client
     app.state.started = True
 
     yield
 
     # Shutdown
-    # TODO: Fechar pool de conexões
+    from intensicare.core.redis import close_redis
+
+    await close_redis()
     app.state.started = False
 
 
 def create_app() -> FastAPI:
-    """Factory que cria e configura a aplicação FastAPI."""
+    """Factory que cria e configura a aplicacao FastAPI."""
 
     app = FastAPI(
         title="Intensicare API",
-        description="Plataforma de monitoramento contínuo para UTI",
+        description="Plataforma de monitoramento continuo para UTI",
         version="0.1.0",
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
@@ -65,10 +71,18 @@ def create_app() -> FastAPI:
             }
         )
 
-    # TODO: Registrar routers
-    # from intensicare.api import patients, alerts, vitals
-    # app.include_router(patients.router, prefix="/api/v1/patients", tags=["patients"])
-    # app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
+    # Register routers
+    from intensicare.api.v1 import (
+        auth_router,
+        alerts_router,
+        vitals_router,
+        patients_router,
+    )
+
+    app.include_router(auth_router)
+    app.include_router(alerts_router)
+    app.include_router(vitals_router, prefix="/api/v1", tags=["vitals"])
+    app.include_router(patients_router, prefix="/api/v1", tags=["patients"])
 
     return app
 

@@ -1,5 +1,5 @@
 """
-Configuração centralizada da aplicação usando pydantic-settings.
+Configuracao centralizada da aplicacao usando pydantic-settings.
 """
 
 from functools import lru_cache
@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Configurações da aplicação Intensicare."""
+    """Configuracoes da aplicacao Intensicare."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     api_reload: bool = False
     api_workers: int = 1
     cors_origins: list[str] = ["*"]
+
+    # JWT settings
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 30
+    jwt_refresh_expire_days: int = 7
 
     postgres_host: str = "localhost"
     postgres_port: int = 5432
@@ -63,6 +68,10 @@ class Settings(BaseSettings):
             return f"redis://:{pw}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
+    # JWT settings
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
+    jwt_refresh_expire_days: int = 7
 
 @lru_cache
 def get_settings() -> Settings:

@@ -79,6 +79,7 @@ def upgrade() -> None:
         sa.Column("mpi_id", sa.String(64), nullable=False),
         sa.Column("score_type", sa.String(16), nullable=False),
         sa.Column("score_value", sa.Integer(), nullable=False),
+        sa.Column("algorithm_version", sa.String(32), nullable=True),
         sa.Column("calculated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("vital_sign_id", sa.BigInteger(), nullable=True),
         sa.Column("components", postgresql.JSONB(), nullable=True),

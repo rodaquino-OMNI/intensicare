@@ -1,73 +1,93 @@
 # =============================================================================
 # Intensicare — Dockerfile multi-estágio
-# Estágios: development (dev) e production (prod)
 # =============================================================================
 
-# ---------------------------------------------------------------------------
-# Estágio base — dependências comuns
-# ---------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS base
+FROM python:3.12-slim-bookworm AS development
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    ENVIRONMENT=development \
+    LOG_LEVEL=DEBUG
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
+    build-essential libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Instala dependências Python
-COPY pyproject.toml .
-COPY src/ ./src/
+# Instala dependências diretamente (sem build system)
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install -e ".[dev]"
+    && pip install \
+        "fastapi[standard]>=0.115,<1.0" \
+        "uvicorn[standard]>=0.30,<1.0" \
+        "sqlalchemy[asyncio]>=2.0,<3.0" \
+        "alembic>=1.13,<2.0" \
+        "asyncpg>=0.29,<1.0" \
+        "redis[hiredis]>=5.0,<6.0" \
+        "pydantic>=2.7,<3.0" \
+        "pydantic-settings>=2.2,<3.0" \
+        "python-hl7>=0.4,<1.0" \
+        "fhir.resources>=7.1,<8.0" \
+        "httpx>=0.27,<1.0" \
+        "python-multipart>=0.0.9,<1.0" \
+        "tenacity>=8.3,<9.0" \
+        "python-jose[cryptography]>=3.3,<4.0" \
+        "passlib[bcrypt]>=1.7,<2.0" \
+    && pip install \
+        "pytest>=8.2,<9.0" \
+        "pytest-asyncio>=0.23,<1.0" \
+        "pytest-cov>=5.0,<6.0" \
+        "ruff>=0.4,<1.0" \
+        "mypy>=1.10,<2.0" \
+        "pre-commit>=3.7,<4.0"
 
-# ---------------------------------------------------------------------------
-# Estágio de desenvolvimento — código montado via volume
-# ---------------------------------------------------------------------------
-FROM base AS development
-
-ENV ENVIRONMENT=development \
-    LOG_LEVEL=DEBUG
-
+COPY src/ ./src/
 COPY tests/ ./tests/
 COPY alembic/ ./alembic/
+COPY pyproject.toml ./
 
 EXPOSE 8000
 
 CMD ["uvicorn", "intensicare.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "src"]
 
-# ---------------------------------------------------------------------------
-# Estágio de produção
-# ---------------------------------------------------------------------------
+
 FROM python:3.12-slim-bookworm AS production
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive \
     ENVIRONMENT=production
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    curl \
+    libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY pyproject.toml .
-COPY src/ ./src/
-RUN pip install --upgrade pip && pip install -e ".[test]" \
-    && pip uninstall -y pytest pytest-cov pytest-asyncio factory-boy faker ruff mypy pre-commit || true
+RUN pip install --upgrade pip \
+    && pip install \
+        "fastapi[standard]>=0.115,<1.0" \
+        "uvicorn[standard]>=0.30,<1.0" \
+        "sqlalchemy[asyncio]>=2.0,<3.0" \
+        "alembic>=1.13,<2.0" \
+        "asyncpg>=0.29,<1.0" \
+        "redis[hiredis]>=5.0,<6.0" \
+        "pydantic>=2.7,<3.0" \
+        "pydantic-settings>=2.2,<3.0" \
+        "python-hl7>=0.4,<1.0" \
+        "fhir.resources>=7.1,<8.0" \
+        "httpx>=0.27,<1.0" \
+        "python-multipart>=0.0.9,<1.0" \
+        "tenacity>=8.3,<9.0" \
+        "python-jose[cryptography]>=3.3,<4.0" \
+        "passlib[bcrypt]>=1.7,<2.0"
 
+COPY src/ ./src/
 COPY alembic/ ./alembic/
+COPY pyproject.toml ./
 
 RUN groupadd -r intensicare && useradd -r -g intensicare -d /app -s /sbin/nologin intensicare \
     && chown -R intensicare:intensicare /app
