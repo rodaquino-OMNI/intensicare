@@ -10,7 +10,7 @@ from intensicare.config import settings
 from intensicare.core.database import Base
 
 # Importa todos os modelos para que Base.metadata contenha todas as tabelas
-# import intensicare.models  # noqa: F401 — descomente quando criar modelos
+import intensicare.models  # noqa: F401
 
 # Alembic Config object
 config = context.config

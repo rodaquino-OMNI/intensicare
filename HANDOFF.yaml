@@ -1,0 +1,7 @@
+# HANDOFF.yaml — Blocked/Completed tracking for IntensiCare
+# This file tracks regulatory, clinical, and technical blockers
+# that must be resolved before production deployment.
+
+blocked: []
+
+completed: []
