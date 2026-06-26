@@ -54,6 +54,12 @@ class Settings(BaseSettings):
         pw = self.postgres_password.get_secret_value()
         return f"postgresql+psycopg2://{self.postgres_user}:{pw}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
+    # FHIR R4 integration (HAPI FHIR / AMH Data Platform)
+    # Leave fhir_base_url empty to disable FHIR enrichment.
+    fhir_base_url: str = ""
+    fhir_auth_token: SecretStr = SecretStr("")
+    fhir_timeout: float = 15.0
+
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0

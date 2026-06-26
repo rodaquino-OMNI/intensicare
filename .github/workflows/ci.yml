@@ -1,6 +1,7 @@
 # =============================================================================
 # Intensicare — CI/CD Pipeline
 # GitHub Actions: lint → test → security-scan → build → (deploy)
+# Backend: Python (src/intensicare) | Frontend: React + TypeScript (frontend/)
 # =============================================================================
 
 name: CI/CD
@@ -25,13 +26,13 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
-  POETRY_VERSION: "1.8"
+  NODE_VERSION: "20"
   DOCKER_IMAGE: ghcr.io/${{ github.repository }}/api
 
 jobs:
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 1 — Lint & Type Check
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 1 — Lint & Type Check (Backend)
+  # ===========================================================================
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-24.04
@@ -60,9 +61,46 @@ jobs:
       - name: MyPy — Static type checking
         run: mypy src/intensicare
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 2 — Test (matriz Python 3.12 + 3.13)
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 2 — Frontend CI (lint + build)
+  # ===========================================================================
+  frontend:
+    name: Frontend — Lint & Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Oxlint — Linter
+        working-directory: frontend
+        run: npm run lint
+
+      - name: TypeScript — Type check + build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 3
+
+  # ===========================================================================
+  # Job 3 — Test (matrix Python 3.12 + 3.13)
+  # ===========================================================================
   test:
     name: Test — Python ${{ matrix.python-version }}
     runs-on: ubuntu-24.04
@@ -112,6 +150,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test]"
 
+      - name: Run verify import chain
+        run: python scripts/verify.py
+
       - name: Wait for PostgreSQL
         timeout-minutes: 1
         run: |
@@ -122,28 +163,24 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://intensicare:intensicare_test@localhost:5432/intensicare_test
-          REDIS_URL: redis://localhost:6379/0
-          ENVIRONMENT: ci
-          LOG_LEVEL: WARNING
+          REDIS_URL: redis://localhost:***@v4
+        timeout-minutes: 10
         run: |
-          pytest tests/ \
-            -v \
+          pytest tests -v \
             --cov=src/intensicare \
             --cov-report=xml:coverage-${{ matrix.python-version }}.xml \
-            --cov-report=term-missing \
-            --asyncio-mode=auto
+            --cov-report=term-missing
 
       - name: Upload coverage artifact
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage-${{ matrix.python-version }}.xml
           retention-days: 7
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 3 — Coverage Report (unifica relatórios da matriz)
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 4 — Coverage Report (merge matrix reports)
+  # ===========================================================================
   coverage:
     name: Coverage Report
     runs-on: ubuntu-24.04
@@ -165,12 +202,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install coverage
-          # Mergea todos os XMLs
           for f in coverage-artifacts/coverage-*/coverage-*.xml; do
             cp "$f" "coverage_$RANDOM.xml"
           done
-          # Sumariza no console
-          echo "### Test Coverage Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Coverage Summary" >> $GITHUB_STEP_SUMMARY
           echo '| Python | Coverage |' >> $GITHUB_STEP_SUMMARY
           echo '|--------|----------|' >> $GITHUB_STEP_SUMMARY
           for ver in 3.12 3.13; do
@@ -184,9 +219,9 @@ jobs:
             fi
           done
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 4 — Security Scan
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 5 — Security Scan
+  # ===========================================================================
   security:
     name: Security Scan
     runs-on: ubuntu-24.04
@@ -243,14 +278,14 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 5 — Build & Push Docker Image
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 6 — Build & Push Docker Images
+  # ===========================================================================
   build:
     name: Build & Push
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [test, security]
+    needs: [test, frontend, security]
     if: |
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
       github.event_name == 'workflow_dispatch'
@@ -271,7 +306,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
+      - name: Docker metadata — API
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -284,7 +319,7 @@ jobs:
             type=sha,prefix=,format=short
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push
+      - name: Build and push API image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -295,21 +330,44 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Docker metadata — Frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/frontend
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          target: production
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Signature — Cosign
         uses: sigstore/cosign-installer@v3
 
-      - name: Sign image
+      - name: Sign images
         env:
           COSIGN_EXPERIMENTAL: "true"
-          TAGS: ${{ steps.meta.outputs.tags }}
+          API_TAGS: ${{ steps.meta.outputs.tags }}
+          FRONTEND_TAGS: ${{ steps.meta-frontend.outputs.tags }}
         run: |
-          for tag in $TAGS; do
+          for tag in $API_TAGS $FRONTEND_TAGS; do
             cosign sign --yes "$tag"
           done
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 6 — Deploy to Staging (manual ou via workflow_dispatch)
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 7 — Deploy to Staging (manual via workflow_dispatch)
+  # ===========================================================================
   deploy-staging:
     name: Deploy — Staging
     runs-on: ubuntu-24.04
@@ -319,20 +377,20 @@ jobs:
       github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
     environment:
       name: staging
-      url: https://staging.api.intensicare.io
+      url: https://staging.intensicare.io
 
     steps:
       - name: Deploy placeholder
         run: |
-          echo "## 🚀 Deploy to Staging" >> $GITHUB_STEP_SUMMARY
+          echo "## Deploy to Staging" >> $GITHUB_STEP_SUMMARY
           echo "Image: ${{ needs.build.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
           echo ""
-          echo "⚠️  Configure as credenciais do cluster Kubernetes e execute o deploy real."
-          echo "    - helm upgrade intensicare intensicare/platform --set image.tag=${{ needs.build.outputs.image_tag }}"
+          echo "Configure the Kubernetes cluster credentials and run the actual deploy."
+          echo "  - helm upgrade intensicare intensicare/platform --set image.tag=${{ needs.build.outputs.image_tag }}"
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Job 7 — Release (triggered by tags)
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # Job 8 — Release (triggered by tags)
+  # ===========================================================================
   release:
     name: Release
     runs-on: ubuntu-24.04

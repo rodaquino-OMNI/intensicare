@@ -23,7 +23,9 @@ router = APIRouter()
     summary="Status do paciente",
     description=(
         "Retorna o status agregado do paciente: sinais vitais mais recentes, "
-        "último score MEWS e tendência dos últimos 5 scores."
+        "último score e tendência dos últimos 5 scores. "
+        "Quando enrich=true e FHIR_BASE_URL está configurado, inclui dados "
+        "demográficos e clínicos do FHIR (HAPI FHIR / AMH Data Platform)."
     ),
     responses={
         200: {"description": "Status do paciente"},
@@ -38,13 +40,18 @@ async def patient_status(
         description="Tipo de score a consultar (MEWS, NEWS2, SOFA, qSOFA)",
         max_length=16,
     ),
+    enrich: bool = Query(
+        False,
+        description="Enriquecer com dados do FHIR (requer FHIR_BASE_URL configurado)",
+    ),
 ) -> PatientStatusResponse:
-    """Retorna status agregado do paciente."""
+    """Retorna status agregado do paciente com enriquecimento FHIR opcional."""
     try:
         result = await get_patient_status(
             db=db,
             mpi_id=mpi_id,
             score_type=score_type,
+            enrich=enrich,
         )
         # Retorna 200 mesmo sem dados — o frontend decide como tratar
         return result

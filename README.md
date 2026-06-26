@@ -1,691 +1,475 @@
-# Intensicare Platform 🏥⚡
+# Intensicare 🏥⚡
 
-> ⚠️ **STATUS: Conceptual Design / Pre-Development (Junho 2026)**
->
-> Este repositório contém a visão de produto e especificação técnica para o Intensicare.
-> **Nenhum código foi implementado ainda.** Toda a arquitetura, endpoints de API, e instruções
-> de deploy descritas abaixo são aspiracionais e representam o estado-alvo desejado.
->
-> O Intensicare será projetado para operar como consumidor especializado da **AMH Data Platform**
-> (`Omni-Saude/amh-data-platform`) — a infraestrutura de dados corporativa da Americas Health.
-> Veja [`docs/analysis/technical-review-2026.md`](docs/analysis/technical-review-2026.md) para a
-> análise técnica completa e o roadmap de desenvolvimento.
->
-> **Stack-alvo:** FastAPI + PostgreSQL/TimescaleDB + Redis, integrado ao lakehouse Apache Iceberg
-> e ao servidor HAPI FHIR R4 da AMH Data Platform.
+**Plataforma de monitoramento contínuo para UTI — FastAPI + TimescaleDB + Redis**
 
-Intensicare is a clinical decision support platform that continuously monitors ICU patients, calculates real-time risk scores, and delivers actionable insights to clinical teams. Built for hospitals, by clinicians and engineers who understand that **every second matters** in critical care.
+> **Status: MVP Funcional — `v0.1.0-alpha` (Junho 2026)**
+>
+> Stack implementada: **Python 3.12 + FastAPI + SQLAlchemy (async) + PostgreSQL/TimescaleDB + Redis**.
+> Quatro engines de scoring clínico (MEWS, NEWS2, SOFA, qSOFA), ingestão HL7 v2 via MLLP,
+> alertas em tempo real via WebSocket, e dashboard clínico React.
 
-## 📋 Quick Navigation
+---
+
+## 📋 Navegação Rápida
 
 | Para | Vá para |
 |------|---------|
+| **Status do projeto** | [`PROJECT_STATUS.md`](PROJECT_STATUS.md) |
 | **Visão do produto** | [`docs/product/vision.md`](docs/product/vision.md) |
-| **Análise técnica completa** | [`docs/analysis/technical-review-2026.md`](docs/analysis/technical-review-2026.md) |
-| **Roadmap de desenvolvimento** | [`docs/analysis/technical-review-2026.md#8-development-roadmap`](docs/analysis/technical-review-2026.md#8-development-roadmap) |
-| **Arquitetura-alvo** | [`docs/analysis/technical-review-2026.md#5-proposed-target-architecture`](docs/analysis/technical-review-2026.md#5-proposed-target-architecture) |
-| **AMH Data Platform** | [`Omni-Saude/amh-data-platform`](https://github.com/Omni-Saude/amh-data-platform) |
+| **Documentação da API** | [`docs/api/overview.md`](docs/api/overview.md) |
+| **Fila regulatória** | [`docs/review-queue.md`](docs/review-queue.md) |
+| **Plano de implementação** | [`docs/implementation-plan.md`](docs/implementation-plan.md) |
+| **Arquitetura (ADR)** | [`docs/architecture/adr/ADR-001-amh-data-platform-consumer.md`](docs/architecture/adr/ADR-001-amh-data-platform-consumer.md) |
+
+---
+
+## 🚀 Quick Start
+
+### Pré-requisitos
+
+- Python 3.12+
+- Docker e Docker Compose
+- Git
+
+### Iniciar o ambiente de desenvolvimento
 
 ```bash
-# Clone the repository
-git clone https://github.com/intensicare/platform.git
-cd platform
+# Clonar o repositório
+git clone <repo-url> intensicare
+cd intensicare
 
-# Start local development environment
-docker-compose up -d
+# Subir banco + Redis + API + frontend
+docker compose up -d
 
-# Access services
-open http://localhost:8080/nifi      # Data ingestion flows
-open http://localhost:3000           # Clinical dashboard  
-open http://localhost:8000/docs      # API documentation
+# Verificar saúde da API
+curl http://localhost:8000/health
+
+# Acessar documentação interativa (Swagger)
+open http://localhost:8000/docs
 ```
 
-## 📋 Table of Contents
+**Serviços disponíveis:**
 
-- [🎯 Clinical Impact](#-clinical-impact)
-- [🏗️ Architecture](#️-architecture)
-- [🛠️ Technology Stack](#️-technology-stack)
-- [⚡ Quick Start](#-quick-start-1)
-- [🔧 Installation](#-installation)
-- [📖 API Documentation](#-api-documentation)
-- [🧪 Clinical Validation](#-clinical-validation)
-- [🔒 Security & Compliance](#-security--compliance)
-- [📊 Monitoring & Observability](#-monitoring--observability)
-- [🤝 Contributing](#-contributing)
-- [📞 Support](#-support)
-- [📜 License](#-license)
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| **API** | http://localhost:8000 | API REST + WebSocket |
+| **Swagger UI** | http://localhost:8000/docs | Documentação interativa OpenAPI |
+| **Redoc** | http://localhost:8000/redoc | Documentação alternativa |
+| **MLLP Listener** | TCP port 2575 | Ingestão HL7 v2 |
+| **Frontend (React)** | http://localhost:3000 | Dashboard clínico |
+| **PostgreSQL** | localhost:5432 | Banco (TimescaleDB) |
+| **Redis** | localhost:6379 | Cache / rate limiting |
 
-## 🎯 Clinical Impact
-
-### What Intensicare Does
-
-Intensicare transforms critical care monitoring by providing:
-
-- **🔍 Continuous Patient Surveillance**: Real-time analysis of vitals, labs, and clinical data
-- **⚠️ Intelligent Early Warning**: ML-powered risk scoring (MEWS, SOFA, Sepsis prediction)
-- **📱 Smart Alert Delivery**: Context-aware notifications that reduce alert fatigue
-- **📈 Clinical Decision Support**: Evidence-based recommendations with full traceability
-- **📋 Seamless EHR Integration**: SMART-on-FHIR apps that fit existing workflows
-
-### Clinical Outcomes
-
-Hospitals using Intensicare report:
-- **15% reduction** in ICU mortality rates
-- **2 hours faster** sepsis recognition and treatment
-- **30% decrease** in manual documentation time
-- **85% physician adoption** rate within 6 months
-
-### Supported Clinical Scoring Systems
-
-| Score | Purpose | Implementation |
-|-------|---------|----------------|
-| **MEWS** | General deterioration detection | ✅ Real-time calculation |
-| **SOFA** | Organ failure assessment | ✅ Automated daily scoring |
-| **qSOFA** | Sepsis screening | ✅ Continuous monitoring |
-| **NEWS2** | National Early Warning Score | ✅ UK NHS validated |
-| **Custom ML** | Sepsis risk prediction | ✅ MIMIC-IV trained model |
-
-## 🏗️ Architecture
-
-### High-Level Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Healthcare Systems                           │
-│                 (Epic, Cerner, Philips, GE)                     │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ HL7, FHIR, REST
-┌────────────────────────▼────────────────────────────────────────┐
-│                   Data Ingestion                                 │
-│                    Apache NiFi                                   │
-│         (HL7/FHIR Processing, Validation, Enrichment)           │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                   Event Streaming                                │
-│                   Apache Kafka                                   │
-│              (Immutable Event Log)                               │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│              Real-Time Processing                                │
-│               Apache Flink + ONNX                                │
-│         (Risk Scoring, ML Inference, CEP)                       │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                    Data Storage                                  │
-│                   TimescaleDB                                    │
-│           (Time-series + Relational)                             │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                     API Layer                                    │
-│                  FastAPI + WebSockets                            │
-│              (REST APIs + Real-time Push)                        │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                   Clinical Interfaces                            │
-│          Web Dashboard + Mobile + SMART-on-FHIR                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Key Design Principles
-
-- **🏥 Clinical-First**: Designed by clinicians for clinical workflows
-- **⚡ Real-Time**: <500ms alert latency from data to notification
-- **🔄 Event-Driven**: Immutable event sourcing for full audit trails
-- **📈 Scalable**: Horizontal scaling to 10,000+ monitored beds
-- **🛡️ Secure**: Zero-trust architecture with end-to-end encryption
-- **🔌 Interoperable**: Standards-based integration (HL7, FHIR, SMART)
-
-## 🛠️ Technology Stack
-
-### Core Platform
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Data Ingestion** | Apache NiFi | HL7/FHIR processing, visual flow design |
-| **Event Streaming** | Apache Kafka | High-throughput message backbone |
-| **Stream Processing** | Apache Flink | Real-time analytics and ML inference |
-| **ML Runtime** | ONNX | Framework-agnostic model deployment |
-| **Database** | TimescaleDB | Time-series optimized PostgreSQL |
-| **API Framework** | FastAPI | High-performance Python APIs |
-| **Container Platform** | Kubernetes | Cloud-native orchestration |
-| **Service Mesh** | Linkerd | Zero-config mTLS and observability |
-
-### Supporting Services
-
-| Category | Technology | Purpose |
-|----------|------------|---------|
-| **Authentication** | Keycloak | Enterprise SSO, SMART-on-FHIR |
-| **Monitoring** | Prometheus + Grafana | Metrics collection and visualization |
-| **Logging** | ELK Stack | Centralized log aggregation |
-| **Secret Management** | HashiCorp Vault | Encryption key and secret storage |
-| **CI/CD** | GitLab | Automated testing and deployment |
-| **Storage** | MinIO | S3-compatible object storage |
-
-### Client Applications
-
-| Interface | Technology | Target Users |
-|-----------|------------|--------------|
-| **Web Dashboard** | React + TypeScript | ICU physicians, nurse managers |
-| **Mobile App** | React Native | On-call staff, rapid response teams |
-| **SMART Apps** | FHIR JS + React | EHR-embedded clinical tools |
-| **API Clients** | OpenAPI/Swagger | Third-party integrations |
-
-## ⚡ Quick Start
-
-### Prerequisites
-
-- **Docker** 20.10+ and **Docker Compose** 2.0+
-- **Kubernetes** 1.24+ (for production deployment)
-- **Helm** 3.8+ (for Kubernetes deployment)
-- **Git** 2.30+
-
-### Local Development Environment
+### Ingestão de sinais vitais
 
 ```bash
-# 1. Clone and setup
-git clone https://github.com/intensicare/platform.git
-cd intensicare-platform
-
-# 2. Copy environment configuration
-cp .env.example .env
-# Edit .env with your settings
-
-# 3. Start all services
-make dev-up
-
-# 4. Initialize database and load test data
-make dev-init
-
-# 5. Verify services are running
-make dev-status
-```
-
-### Accessing Services
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| **Clinical Dashboard** | http://localhost:3000 | admin/admin |
-| **NiFi Data Flows** | http://localhost:8080/nifi | admin/admin |
-| **API Documentation** | http://localhost:8000/docs | - |
-| **Grafana Monitoring** | http://localhost:3001 | admin/admin |
-| **Kafka UI** | http://localhost:9000 | - |
-
-### Test the Platform
-
-```bash
-# Send sample HL7 ADT message
-curl -X POST http://localhost:8000/api/v1/hl7/ingest \
-  -H "Content-Type: text/plain" \
-  -d @tests/fixtures/sample_adt.hl7
-
-# Send sample vital signs
+# Enviar sinais vitais para a API
 curl -X POST http://localhost:8000/api/v1/vitals \
   -H "Content-Type: application/json" \
-  -d @tests/fixtures/sample_vitals.json
+  -d '{
+    "mpi_id": "MPI-00012345",
+    "recorded_at": "2026-06-26T10:00:00Z",
+    "heart_rate": 88,
+    "systolic_bp": 125,
+    "diastolic_bp": 80,
+    "temperature": 37.0,
+    "spo2": 97,
+    "respiratory_rate": 16,
+    "avpu": "A",
+    "supplemental_o2": false,
+    "source_system": "philips_monitor"
+  }'
 
-# Check generated alerts
-curl http://localhost:8000/api/v1/alerts?status=active
+# Resposta inclui MEWS, NEWS2, SOFA e qSOFA calculados automaticamente
 ```
 
-## 🔧 Installation
-
-### Production Deployment on Kubernetes
-
-#### 1. Prerequisites
+### Consultar status do paciente
 
 ```bash
-# Install required tools
-brew install helm kubectl terraform
-
-# Verify cluster access
-kubectl cluster-info
-
-# Add Intensicare Helm repository
-helm repo add intensicare https://charts.intensicare.io
-helm repo update
+# Status agregado com score + tendência
+curl http://localhost:8000/api/v1/patients/MPI-00012345/status
 ```
 
-#### 2. Infrastructure Setup
+### Dashboard (leitos)
 
 ```bash
-# Clone infrastructure code
-git clone https://github.com/intensicare/infrastructure.git
-cd infrastructure
+# Grid de leitos com scores e alertas
+curl http://localhost:8000/api/v1/dashboard
 
-# Deploy base infrastructure (adjust for your cloud provider)
-cd terraform/aws  # or azure/, gcp/
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
+# Filtrar por unidade
+curl "http://localhost:8000/api/v1/dashboard?unit=UTI-A"
 ```
 
-#### 3. Platform Deployment
+### WebSocket (alertas em tempo real)
 
 ```bash
-# Create namespace
-kubectl create namespace intensicare
+# Conectar via wscat ou ferramenta similar
+wscat -c ws://localhost:8000/ws
 
-# Install platform
-helm install intensicare intensicare/platform \
-  --namespace intensicare \
-  --values values/production.yaml \
-  --set image.tag=v2.1.0
-
-# Verify deployment
-kubectl get pods -n intensicare
-kubectl get services -n intensicare
+# No WebSocket:
+# {"action": "subscribe", "patient_id": "MPI-00012345"}
+# {"action": "ping"}
 ```
 
-#### 4. Initial Configuration
+---
+
+## 📖 Documentação da API
+
+A documentação interativa completa está disponível em:
+
+- **Swagger UI:** http://localhost:8000/docs
+- **Redoc:** http://localhost:8000/redoc
+
+### Endpoints principais
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/health` | Health check |
+| `POST` | `/auth/login` | Login (retorna JWT) |
+| `POST` | `/auth/register` | Registro (admin-only) |
+| `POST` | `/auth/logout` | Logout (blacklist token) |
+| `POST` | `/api/v1/vitals` | Ingerir sinais vitais (calcula MEWS + NEWS2 + SOFA + qSOFA) |
+| `GET` | `/api/v1/patients/{mpi_id}/status` | Status do paciente |
+| `GET` | `/api/v1/patients/{mpi_id}/detail` | Detalhes do paciente (24h) |
+| `GET` | `/api/v1/dashboard` | Dashboard de leitos |
+| `GET` | `/api/v1/alerts` | Listar alertas |
+| `POST` | `/api/v1/alerts/{id}/acknowledge` | Confirmar alerta |
+| `GET` | `/api/v1/alerts/{id}/trace` | Rastrear alerta |
+| `GET` | `/api/v1/thresholds` | Listar thresholds (admin) |
+| `POST` | `/api/v1/thresholds` | Criar threshold (admin) |
+| `PUT` | `/api/v1/thresholds/{id}` | Atualizar threshold (admin) |
+| `DELETE` | `/api/v1/thresholds/{id}` | Remover threshold (admin) |
+| `WS` | `/ws` | WebSocket para alertas em tempo real |
+
+> Documentação completa de cada endpoint com exemplos: [`docs/api/overview.md`](docs/api/overview.md)
+
+---
+
+## 🧪 Scores Clínicos Implementados
+
+| Score | Engine | Versão | Validação |
+|-------|--------|--------|-----------|
+| **MEWS** | Modified Early Warning Score | `MEWS-v1.0` | ✅ Testes unitários + integração |
+| **NEWS2** | National Early Warning Score 2 | `NEWS2-v1.0` | ✅ Testes unitários + integração |
+| **SOFA** | Sequential Organ Failure Assessment | `SOFA-v1.0` | ✅ Testes unitários |
+| **qSOFA** | Quick SOFA (Sepsis Screening) | `qSOFA-v1.0` | ✅ Testes unitários |
+
+Todos os scores são calculados **sincronamente** após cada ingestão de sinais vitais.
+Cada ClinicalScore registrado inclui `algorithm_version` para rastreabilidade completa.
+
+---
+
+## 🏗️ Arquitetura
+
+```
+┌─────────────────────────────────────────────────┐
+│  Fontes de Dados                                  │
+│  ┌──────────┐  ┌───────────┐  ┌──────────────┐  │
+│  │ Monitores│  │ HL7 (MLLP)│  │  AMH Data     │  │
+│  │ Philips  │  │ TCP:2575  │  │  Platform     │  │
+│  └────┬─────┘  └─────┬─────┘  └──────┬───────┘  │
+└───────┼──────────────┼───────────────┼───────────┘
+        │              │               │
+        ▼              ▼               ▼
+┌─────────────────────────────────────────────────┐
+│              Intensicare API (FastAPI)            │
+│  ┌─────────────┐  ┌──────────────┐              │
+│  │ Vitals      │  │ Alert Engine │              │
+│  │ Ingestion   │  │ (Redis RL)   │              │
+│  └──────┬──────┘  └──────┬───────┘              │
+│         │                │                       │
+│  ┌──────▼────────────────▼───────┐              │
+│  │     Scoring Engines           │              │
+│  │  MEWS | NEWS2 | SOFA | qSOFA  │              │
+│  └──────────────┬────────────────┘              │
+│                 │                                │
+│  ┌──────────────▼────────────────┐              │
+│  │     WebSocket Manager          │              │
+│  │     (broadcast em tempo real)  │              │
+│  └───────────────────────────────┘              │
+└──────────┬──────────────────┬───────────────────┘
+           │                  │
+           ▼                  ▼
+┌──────────────────┐  ┌──────────────────┐
+│ PostgreSQL 16    │  │ Redis 7          │
+│ + TimescaleDB    │  │ cache / pubsub   │
+│ (dados + scores) │  │ / rate limiting  │
+└──────────────────┘  └──────────────────┘
+```
+
+---
+
+## 🛠️ Stack Tecnológica
+
+| Componente | Tecnologia | Versão |
+|-----------|------------|--------|
+| **Linguagem** | Python | 3.12+ |
+| **Framework API** | FastAPI | 0.115+ |
+| **ORM** | SQLAlchemy (async) | 2.0+ |
+| **Banco** | PostgreSQL + TimescaleDB | 16 / 2.x |
+| **Cache / Queue** | Redis | 7 |
+| **Autenticação** | JWT (python-jose) + bcrypt | — |
+| **HL7 Parser** | hl7apy | 1.0+ |
+| **Linter** | Ruff | 0.4+ |
+| **Type Checker** | MyPy (strict) | 1.10+ |
+| **Testes** | pytest + pytest-asyncio | 8.2+ |
+| **Migrations** | Alembic | 1.13+ |
+| **Container** | Docker Compose | v2+ |
+
+---
+
+## 🧪 Testes
 
 ```bash
-# Create admin user
-kubectl exec -it deployment/auth-service -- \
-  python scripts/create_admin_user.py \
-  --email admin@yourhospital.com \
-  --password "your-secure-password"
+# Executar todos os testes
+docker compose exec api pytest tests/ -v
 
-# Load clinical configuration
-kubectl apply -f config/clinical-rules.yaml
-kubectl apply -f config/alert-thresholds.yaml
+# Ou com o ambiente local:
+pytest tests/ -v
 
-# Verify system health
-curl https://your-domain.com/api/v1/health
+# Com cobertura
+pytest tests/ -v --cov=src/intensicare --cov-report=term-missing
 ```
 
-### Configuration
+Cobertura de testes inclui:
+- `test_mews.py` — Validação do algoritmo MEWS
+- `test_news2.py` — Todos os 7 parâmetros do NEWS2
+- `test_sofa.py` — 6 sistemas orgânicos do SOFA
+- `test_qsofa.py` — 3 critérios binários do qSOFA
+- `test_vitals.py` — Ingestão, idempotência, status do paciente
+- `test_auth.py` — Login, registro, JWT
+- `test_alerts.py` — CRUD de alertas, acknowledge
+- `test_alert_engine.py` — Thresholds, rate limiting, cooldown
+- `test_thresholds.py` — CRUD de thresholds
+- `test_websocket.py` — WebSocket connect/subscribe/broadcast
+- `test_mllp_listener.py` — MLLP framing, parsing HL7
+- `test_main.py` — Health check
 
-#### Environment Variables
+---
+
+## 📂 Estrutura do Repositório
+
+```
+intensicare/
+├── src/intensicare/
+│   ├── main.py              # Aplicação FastAPI + lifespan
+│   ├── config.py            # Configuração centralizada (pydantic-settings)
+│   ├── auth.py              # Dependências de autenticação
+│   ├── mllp_listener.py     # Servidor TCP MLLP (HL7 v2)
+│   ├── api/
+│   │   ├── v1/
+│   │   │   ├── auth.py      # POST /auth/login, /auth/register, /auth/logout
+│   │   │   ├── alerts.py    # GET/POST /api/v1/alerts
+│   │   │   ├── dashboard.py # GET /api/v1/dashboard, /patients/{id}/detail
+│   │   │   └── __init__.py
+│   │   ├── vitals.py        # POST /api/v1/vitals
+│   │   ├── patients.py      # GET /api/v1/patients/{id}/status
+│   │   └── thresholds.py    # CRUD /api/v1/thresholds
+│   ├── auth/
+│   │   ├── jwt.py           # Criação/verificação de tokens JWT
+│   │   └── dependencies.py  # get_current_user, require_admin
+│   ├── core/
+│   │   ├── database.py      # Engine SQLAlchemy async + session
+│   │   ├── redis.py         # Cliente Redis (lazy init)
+│   │   └── websocket.py     # WebSocket Manager
+│   ├── models/              # SQLAlchemy models (6 tabelas)
+│   │   ├── vital_sign.py
+│   │   ├── clinical_score.py
+│   │   ├── alert.py
+│   │   ├── threshold_config.py
+│   │   ├── patient_cache.py
+│   │   └── user.py
+│   ├── schemas/             # Pydantic schemas
+│   └── services/            # Lógica de negócio
+│       ├── vitals.py        # Ingestão + idempotência
+│       ├── mews.py          # Engine MEWS
+│       ├── news2.py         # Engine NEWS2
+│       ├── sofa.py          # Engine SOFA
+│       ├── qsofa.py         # Engine qSOFA
+│       ├── alert_engine.py  # Verificação de thresholds + rate limiting
+│       ├── patients.py      # Consulta de status
+│       └── dashboard.py     # Agregação do dashboard
+├── tests/                   # 12 arquivos de teste
+├── frontend/                # Dashboard React + TypeScript + Vite
+│   ├── src/
+│   │   ├── components/      # BedGrid, PatientDetail, AlertPanel, etc.
+│   │   ├── hooks/           # useAuth
+│   │   ├── api/             # Cliente HTTP
+│   │   └── types/           # Tipos TypeScript
+│   └── Dockerfile
+├── alembic/                 # Migrações de banco
+│   └── versions/            # 3 migrações
+├── Dockerfile               # Multi-estágio (dev + prod)
+├── docker-compose.yml       # API + DB + Redis + MLLP + Frontend
+├── Makefile                 # 25+ comandos
+├── pyproject.toml           # Build + tool config
+└── docs/                    # Documentação
+    ├── api/overview.md
+    ├── product/
+    ├── architecture/adr/
+    ├── data/
+    └── implementation-plan.md
+```
+
+---
+
+## 🏥 Integração Hospitalar (MLLP)
+
+O Intensicare inclui um **MLLP Listener** que recebe mensagens HL7 v2 ORU-R01 diretamente de monitores e sistemas hospitalares.
+
+### Como funciona
+
+1. O Listener escuta na porta TCP **2575** (padrão MLLP)
+2. Recebe mensagens com framing MLLP (`<VT>...<FS><CR>`)
+3. Parseia segmentos MSH, PID, OBR, OBX via `hl7apy`
+4. Mapeia códigos LOINC → campos de sinais vitais
+5. Encaminha como JSON para `POST /api/v1/vitals` com `X-Idempotency-Key: MSH-10`
+6. Retorna ACK HL7 (`AA` = sucesso, `AE` = erro, `AR` = rejeição)
+
+### Iniciar o MLLP Listener
 
 ```bash
-# Core Configuration
-ENVIRONMENT=production
-LOG_LEVEL=INFO
-DEBUG=false
+# Via Docker Compose (já incluso)
+docker compose up -d mllp-listener
 
-# Database
-TIMESCALEDB_HOST=timescaledb.intensicare.svc.cluster.local
-TIMESCALEDB_PORT=5432
-TIMESCALEDB_DATABASE=intensicare
-TIMESCALEDB_USERNAME=intensicare
-TIMESCALEDB_PASSWORD_SECRET=timescaledb-password
-
-# Kafka
-KAFKA_BROKERS=kafka.intensicare.svc.cluster.local:9092
-KAFKA_SECURITY_PROTOCOL=SASL_SSL
-KAFKA_SASL_MECHANISM=SCRAM-SHA-512
-
-# Authentication
-KEYCLOAK_URL=https://auth.yourhospital.com
-KEYCLOAK_REALM=intensicare
-KEYCLOAK_CLIENT_ID=intensicare-api
-
-# Clinical Configuration
-MEWS_THRESHOLD_HIGH=5
-MEWS_THRESHOLD_CRITICAL=7
-SEPSIS_MODEL_THRESHOLD=0.7
-ALERT_RATE_LIMIT_PER_HOUR=3
+# Ou manualmente:
+python -m intensicare.mllp_listener --host 0.0.0.0 --port 2575 --api-url http://localhost:8000/api/v1
 ```
 
-#### Clinical Rules Configuration
+### LOINC Codes Suportados
 
-```yaml
-# config/clinical-rules.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: clinical-rules
-data:
-  mews-config.yaml: |
-    scoring:
-      respiratory_rate:
-        ranges:
-          - min: 9, max: 14, score: 0
-          - min: 15, max: 20, score: 1
-          - min: 21, max: 29, score: 2
-          - min: 30, max: 999, score: 3
-          - min: 0, max: 8, score: 3
-      
-      oxygen_saturation:
-        ranges:
-          - min: 96, max: 100, score: 0
-          - min: 94, max: 95, score: 1
-          - min: 92, max: 93, score: 2
-          - min: 0, max: 91, score: 3
-    
-    alert_thresholds:
-      watch: 3
-      urgent: 5
-      critical: 7
+| LOINC | Campo |
+|-------|-------|
+| 8867-4 | heart_rate |
+| 8480-6 | systolic_bp |
+| 8462-4 | diastolic_bp |
+| 8310-5 | temperature |
+| 2708-6, 59408-5 | spo2 |
+| 9279-1 | respiratory_rate |
+| 11488-4 | avpu |
 
-  sepsis-model.yaml: |
-    model:
-      name: "sepsis_risk_v2.1"
-      path: "/models/sepsis-risk-v2.1.onnx"
-      features:
-        - heart_rate_mean_6h
-        - temperature_max_6h
-        - lactate_latest
-        - wbc_latest
-        - systolic_bp_min_6h
-      threshold: 0.7
-      confidence_threshold: 0.8
-```
+Codes alternativos (não-LOINC) como `PULSE`, `HR`, `SBP`, `TEMP`, `SPO2`, `RR`, `AVPU` também são suportados.
 
-## 📖 API Documentation
+---
 
-### RESTful APIs
+## 🔐 Autenticação
 
-The platform provides comprehensive REST APIs documented with OpenAPI 3.0:
-
-- **📖 Interactive Documentation**: https://your-domain.com/docs
-- **📄 OpenAPI Spec**: https://your-domain.com/openapi.json
-- **🔍 Redoc Documentation**: https://your-domain.com/redoc
-
-### Key API Endpoints
-
-#### Patient Monitoring
+A API usa **JWT Bearer tokens** para autenticação:
 
 ```bash
-# Get real-time patient status
-GET /api/v1/patients/{patient_id}/status
+# Registrar usuário (admin-only)
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin:admin" \
+  -d '{
+    "username": "medico01",
+    "email": "medico@hospital.com",
+    "password": "senha-segura-123",
+    "display_name": "Dr. Silva"
+  }'
 
-# Get patient risk scores
-GET /api/v1/patients/{patient_id}/scores
+# Login
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "medico01", "password": "senha-segura-123"}'
 
-# Get patient alert history
-GET /api/v1/patients/{patient_id}/alerts
+# Usar token nos endpoints protegidos
+curl http://localhost:8000/api/v1/alerts \
+  -H "Authorization: Bearer <access_token>"
 ```
 
-#### Alert Management
+---
+
+## ⚙️ Configuração (Thresholds)
+
+Os thresholds de alerta são configuráveis por tenant e unidade (admin-only):
 
 ```bash
-# Get active alerts
-GET /api/v1/alerts?status=active&unit=MICU
-
-# Acknowledge alert
-POST /api/v1/alerts/{alert_id}/acknowledge
-
-# Get alert details with full traceability
-GET /api/v1/alerts/{alert_id}/trace
+# Criar threshold para MEWS
+curl -X POST http://localhost:8000/api/v1/thresholds \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin:admin" \
+  -d '{
+    "tenant_id": "hospital-austa",
+    "unit": "UTI-A",
+    "score_type": "MEWS",
+    "watch_threshold": 3,
+    "urgent_threshold": 5,
+    "critical_threshold": 7,
+    "rate_limit_per_hour": 10,
+    "cooldown_minutes": 15
+  }'
 ```
 
-#### Clinical Decision Support
+---
+
+## 🔒 Segurança e Compliance
+
+### Status Regulatório
+
+| Dimensão | Status |
+|----------|--------|
+| **ANVISA SaMD** | Classe II — análise preliminar; consultoria pendente |
+| **LGPD** | Conformidade por design; RIPD pendente |
+| **SBIS** | Plano de certificação elaborado |
+| **CFM** | Conformidade com Resolução 1.821/07 (prontuário eletrônico) |
+
+> Detalhes: [`docs/review-queue.md`](docs/review-queue.md) e [`docs/implementation-plan.md`](docs/implementation-plan.md#5-compliance-baseline)
+
+### Práticas de Segurança Implementadas
+
+- **Senhas**: hash bcrypt (via passlib)
+- **JWT**: tokens com expiração (30 min access, 7 dias refresh)
+- **Token Blacklist**: Redis para revogação de tokens
+- **CORS**: configurável via `cors_origins`
+- **Rate Limiting**: Redis-based no alert engine
+- **Idempotência**: `X-Idempotency-Key` (MSH-10) na ingestão de vitais
+- **Secrets**: `SecretStr` do Pydantic para senhas e chaves
+
+---
+
+## 🤝 Contribuindo
+
+### Setup de desenvolvimento
 
 ```bash
-# Get recommendations for patient
-POST /api/v1/cds/recommendations
-{
-  "patient_id": "patient_123",
-  "clinical_question": "sepsis_workup",
-  "current_context": {...}
-}
+# Setup inicial
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 
-# Submit clinical feedback
-POST /api/v1/feedback/alert-accuracy
-{
-  "alert_id": "alert_456",
-  "outcome": "true_positive",
-  "clinical_notes": "Patient developed sepsis as predicted"
-}
+# Pre-commit hooks
+pre-commit install --hook-type pre-commit --hook-type commit-msg
+
+# Lint + testes
+ruff check src tests
+mypy src/intensicare
+pytest tests/ -v
 ```
 
-### WebSocket APIs
-
-Real-time updates via WebSocket connections:
-
-```javascript
-// Connect to real-time alerts
-const ws = new WebSocket('wss://your-domain.com/ws/alerts');
-
-// Subscribe to patient updates
-ws.send(JSON.stringify({
-  action: 'subscribe',
-  patient_ids: ['patient_123', 'patient_456']
-}));
-
-// Handle incoming alerts
-ws.onmessage = (event) => {
-  const alert = JSON.parse(event.data);
-  displayAlert(alert);
-};
-```
-
-### FHIR R4 API
-
-Standards-compliant FHIR R4 endpoints:
+### Antes de commitar
 
 ```bash
-# FHIR base URL
-https://your-domain.com/fhir/R4/
-
-# Search patients
-GET /fhir/R4/Patient?identifier=MRN|12345
-
-# Get risk score observations
-GET /fhir/R4/Observation?patient=Patient/123&category=survey
-
-# Create alert communication
-POST /fhir/R4/Communication
-{
-  "resourceType": "Communication",
-  "status": "in-progress",
-  "category": [{
-    "coding": [{
-      "system": "http://terminology.hl7.org/CodeSystem/communication-category",
-      "code": "alert"
-    }]
-  }],
-  "subject": {"reference": "Patient/123"},
-  "payload": [{
-    "contentString": "MEWS score elevated to 6"
-  }]
-}
+make check   # lint + test
 ```
 
-## 🧪 Clinical Validation
+---
 
-### Validation Status
+## 📞 Suporte
 
-| Component | Validation Status | Last Reviewed |
-|-----------|------------------|---------------|
-| **MEWS Scoring** | ✅ Clinically Validated | 2025-06-15 |
-| **SOFA Scoring** | ✅ Clinically Validated | 2025-06-10 |
-| **Sepsis Model** | 🟡 Under Review | 2025-07-01 |
-| **Alert Logic** | ✅ Clinically Validated | 2025-06-20 |
-| **Mobile App** | 🟡 Pilot Testing | 2025-07-01 |
+Para questões técnicas, abra uma issue no repositório.
+Para questões clínicas/regulatórias, consulte [`docs/review-queue.md`](docs/review-queue.md).
 
-### Performance Metrics
+---
 
-Based on validation with 5 academic medical centers:
+## 📜 Licença
 
-| Metric | Target | Achieved | Validation Period |
-|--------|--------|----------|-------------------|
-| **MEWS Sensitivity** | ≥85% | 87.3% | 6 months |
-| **MEWS Specificity** | ≥90% | 92.1% | 6 months |
-| **Sepsis Detection** | ≥80% | 84.7% | 3 months |
-| **Alert Accuracy** | ≥85% | 88.2% | 6 months |
-| **False Positive Rate** | ≤15% | 11.8% | 6 months |
-
-### Clinical Studies
-
-- **"Impact of AI-Driven Early Warning Systems in ICU"** - *Critical Care Medicine* (Under Review)
-- **"Reducing Alert Fatigue Through Intelligent Clinical Decision Support"** - *JAMIA* (Published 2025)
-- **"Real-Time Sepsis Prediction in Critical Care Settings"** - *Nature Digital Medicine* (Submitted)
-
-### Validation Process
-
-```bash
-# Run clinical validation tests
-make clinical-validate
-
-# Generate validation report
-python scripts/generate_validation_report.py \
-  --dataset tests/data/validation_dataset.csv \
-  --output reports/clinical_validation.html
-
-# Compare against gold standard
-python scripts/compare_gold_standard.py \
-  --predictions data/predictions.json \
-  --ground_truth data/ground_truth.json
-```
-
-## 🔒 Security & Compliance
-
-### Compliance Frameworks
-
-- **✅ HIPAA** - Health Insurance Portability and Accountability Act
-- **✅ GDPR** - General Data Protection Regulation  
-- **✅ ISO 27001** - Information Security Management
-- **🟡 SOC 2 Type II** - In Progress
-- **🟡 FedRAMP** - Planned for Government Deployments
-
-### Security Features
-
-#### Data Protection
-- **🔐 End-to-End Encryption**: TLS 1.3 in transit, AES-256 at rest
-- **🔑 Field-Level Encryption**: PHI encrypted at the field level
-- **🛡️ Zero-Trust Architecture**: All services require authentication
-- **📝 Audit Logging**: Immutable audit trail for all data access
-
-#### Access Control
-- **👤 Multi-Factor Authentication**: Required for all users
-- **🔐 Role-Based Access Control**: Fine-grained permissions
-- **⏰ Just-in-Time Access**: Emergency access with automatic expiration
-- **🔄 Regular Access Reviews**: Quarterly access certification
-
-#### Network Security
-- **🌐 Service Mesh**: Automatic mTLS between all services
-- **🛡️ Web Application Firewall**: Rate limiting and attack protection
-- **🔍 Network Segmentation**: Microsegmentation with Kubernetes NetworkPolicies
-- **📊 Traffic Analysis**: Real-time network monitoring
-
-### Security Scanning
-
-```bash
-# Run security scans
-make security-scan
-
-# Container vulnerability scanning
-trivy image intensicare/api:latest
-
-# Dependency vulnerability check
-safety check -r requirements.txt
-
-# Infrastructure security scan
-checkov -f infrastructure/terraform/
-```
-
-### Incident Response
-
-- **📞 24/7 Security Operations Center**: Monitoring and response
-- **📋 Incident Response Plan**: Documented procedures for security events
-- **🚨 Automated Alerting**: Real-time security event detection
-- **📊 Regular Penetration Testing**: Quarterly external security assessments
-
-## 📊 Monitoring & Observability
-
-### Key Metrics Dashboard
-
-#### Clinical Metrics
-- **Patient Census**: Real-time ICU occupancy and acuity
-- **Alert Volume**: Alerts generated per hour/day/week
-- **Response Times**: Time from alert to clinical action
-- **Outcome Tracking**: Patient outcomes correlated with alerts
-
-#### Technical Metrics
-- **System Health**: Service availability and performance
-- **Data Quality**: Completeness and accuracy of ingested data
-- **Alert Latency**: End-to-end processing time
-- **Error Rates**: Failed API calls and processing errors
-
-### Grafana Dashboards
-
-```bash
-# Import pre-built dashboards
-kubectl apply -f monitoring/grafana-dashboards/
-
-# Access Grafana
-kubectl port-forward svc/grafana 3000:3000
-
-# Default dashboards include:
-# - ICU Operations Overview
-# - Clinical Alert Analytics  
-# - System Performance Metrics
-# - Security and Audit Dashboard
-```
-
-### Alerting Rules
-
-```yaml
-# prometheus/alerts.yaml
-groups:
-  - name: clinical.rules
-    rules:
-      - alert: HighAlertLatency
-        expr: histogram_quantile(0.95, alert_processing_duration_seconds) > 2.0
-        for: 2m
-        labels:
-          severity: critical
-          team: platform
-        annotations:
-          summary: "Alert processing latency is above 2 seconds"
-          
-      - alert: AlertDeliveryFailure
-        expr: increase(alert_delivery_failures_total[5m]) > 0
-        for: 0m
-        labels:
-          severity: critical
-          team: clinical
-        annotations:
-          summary: "Alert delivery failing for {{ $labels.patient_id }}"
-
-      - alert: ModelPerformanceDegraded
-        expr: model_accuracy_score < 0.85
-        for: 5m
-        labels:
-          severity: warning
-          team: data_science
-        annotations:
-          summary: "Model {{ $labels.model_name }} accuracy below threshold"
-```
-
-### Log Aggregation
-
-```bash
-# View application logs
-kubectl logs -f deployment/api-service -n intensicare
-
-# Search logs with Elasticsearch
-curl -X POST "elasticsearch:9200/intensicare-logs/_search" \
-  -H 'Content-Type: application/json' \
-  -d '{"query": {"match": {"message": "alert generated"}}}'
-
-# Structured logging format
-{
-  "timestamp": "2025-07-02T14:30:00.123Z",
-  "level": "INFO",
-  "service": "scoring-engine",
-  "patient_id": "patient_123",
-  "alert_id": "alert_456",
-  "message": "MEWS score calculated",
-  "metadata": {
-    "score": 6,
-    "previous_score": 4,
-    "trend": "increasing"
-  }
-}
-```
+Proprietária. Todos os direitos reservados.
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by clinicians and engineers who believe technology can save lives**
+**Desenvolvido pela equipe Intensicare — tecnologia que salva vidas na UTI**
 
 </div>

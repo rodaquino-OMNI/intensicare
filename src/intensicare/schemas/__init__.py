@@ -5,6 +5,7 @@ from intensicare.schemas.vitals import (
     VitalSignResponse,
 )
 from intensicare.schemas.patients import (
+    FHIREnrichment,
     PatientStatusResponse,
     ScoreSummary,
     TrendSummary,
@@ -18,6 +19,7 @@ from intensicare.schemas.thresholds import (
 )
 
 __all__ = [
+    "FHIREnrichment",
     "VitalSignCreate",
     "VitalSignResponse",
     "PatientStatusResponse",

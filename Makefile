@@ -23,10 +23,13 @@ RUFF       ?= ruff
 MYPY       ?= mypy
 PYTEST     ?= pytest
 ALEMBIC    ?= alembic
+NPM        ?= npm
+NPX        ?= npx
 
 VENV       ?= .venv
 SRC_DIR    := src
 TEST_DIR   := tests
+FRONTEND_DIR := frontend
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Ajuda
@@ -78,14 +81,15 @@ setup-env-file: ## Cria arquivo .env a partir do .env.example
 # ═══════════════════════════════════════════════════════════════════════════
 
 .PHONY: dev-up
-dev-up: ## Sobe o ambiente Docker (API + Postgres + Redis)
+dev-up: ## Sobe o ambiente Docker (API + Frontend + Postgres + Redis)
 	@echo "$(GREEN)[docker]$(NC) Iniciando serviços..."
-	$(COMPOSE) up -d --build api postgres redis
+	$(COMPOSE) up -d --build api frontend postgres redis
 	@echo "$(GREEN)[docker]$(NC) Aguardando serviços ficarem saudáveis..."
 	@sleep 3
 	$(COMPOSE) ps
 	@echo "$(GREEN)[docker]$(NC) ✓ API:        http://localhost:8000"
 	@echo "$(GREEN)[docker]$(NC)   Docs:       http://localhost:8000/docs"
+	@echo "$(GREEN)[docker]$(NC)   Frontend:   http://localhost:3000"
 	@echo "$(GREEN)[docker]$(NC)   Postgres:   localhost:5432"
 	@echo "$(GREEN)[docker]$(NC)   Redis:      localhost:6379"
 
@@ -227,6 +231,38 @@ security-scan: ## Varredura de segurança com bandit + pip-audit
 
 .PHONY: check
 check: lint test ## Executa lint + testes (use antes de commitar)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Frontend (React 19 + TypeScript + Vite)
+# ═══════════════════════════════════════════════════════════════════════════
+
+.PHONY: frontend-install
+frontend-install: ## Instala dependências do frontend (npm ci)
+	@echo "$(GREEN)[frontend]$(NC) Instalando dependências..."
+	cd $(FRONTEND_DIR) && $(NPM) ci
+	@echo "$(GREEN)[frontend]$(NC) ✓ Dependências instaladas"
+
+.PHONY: frontend-dev
+frontend-dev: ## Inicia o servidor de desenvolvimento Vite (porta 3000, hot reload)
+	@echo "$(GREEN)[frontend]$(NC) Iniciando Vite dev server em http://localhost:3000"
+	cd $(FRONTEND_DIR) && $(NPM) run dev
+
+.PHONY: frontend-build
+frontend-build: ## Gera build de produção do frontend (dist/)
+	@echo "$(GREEN)[frontend]$(NC) Build de produção..."
+	cd $(FRONTEND_DIR) && $(NPM) run build
+	@echo "$(GREEN)[frontend]$(NC) ✓ Build gerado em $(FRONTEND_DIR)/dist/"
+
+.PHONY: frontend-lint
+frontend-lint: ## Executa linter do frontend (oxlint)
+	@echo "$(GREEN)[frontend]$(NC) Linting..."
+	cd $(FRONTEND_DIR) && $(NPM) run lint
+	@echo "$(GREEN)[frontend]$(NC) ✓ Lint concluído"
+
+.PHONY: frontend-preview
+frontend-preview: ## Faz preview local da build de produção
+	@echo "$(GREEN)[frontend]$(NC) Preview da build em http://localhost:4173"
+	cd $(FRONTEND_DIR) && $(NPM) run preview
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Build & Release

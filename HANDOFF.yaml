@@ -1,7 +1,155 @@
 # HANDOFF.yaml — Blocked/Completed tracking for IntensiCare
-# This file tracks regulatory, clinical, and technical blockers
-# that must be resolved before production deployment.
+# Atualizado: 26 de junho de 2026
+#
+# Bloqueios que impedem produção:
+# - Regulatórios (ANVISA, LGPD)
+# - Técnicos (audit_trail, criptografia PHI)
+# - Clínicos (validação com dados reais)
 
-blocked: []
+blocked:
+  - id: "REG-001"
+    title: "ANVISA SaMD Classification"
+    severity: critical
+    description: "Classificação formal do software como dispositivo médico (SaMD) — Classe II preliminar."
+    resolution: "Contratar consultoria especializada em regulação ANVISA para SaMD."
+    deadline: "2026-Q3"
 
-completed: []
+  - id: "REG-002"
+    title: "LGPD RIPD (Relatório de Impacto à Proteção de Dados)"
+    severity: critical
+    description: "RIPD obrigatório para processamento de dados de saúde (sensíveis, Art. 11 LGPD)."
+    resolution: "DPO + time jurídico devem elaborar RIPD antes de processar dados de pacientes reais."
+    deadline: "2026-Q3"
+
+  - id: "TECH-001"
+    title: "Tabela audit_trail imutável"
+    severity: critical
+    description: "Invariante arquitetural #1. Trilha de auditoria append-only com trigger anti-mutação."
+    resolution: "Implementar tabela audit_trail + trigger antes da primeira ingestão de dados reais."
+    deadline: "Antes do piloto clínico"
+
+  - id: "TECH-002"
+    title: "Criptografia em repouso (pgcrypto para PHI)"
+    severity: critical
+    description: "Campos PHI (nome, CPF, CNS) devem ser criptografados com pgcrypto. Invariante #4."
+    resolution: "Implementar criptografia de colunas sensíveis via pgcrypto."
+    deadline: "Antes do piloto clínico"
+
+  - id: "TECH-003"
+    title: "Dead man's switch externo"
+    severity: high
+    description: "Monitoramento externo que alerta se a API ficar indisponível. Invariante #5."
+    resolution: "Script externo de health check com alerta (PagerDuty/similar)."
+    deadline: "Antes do piloto clínico"
+
+  - id: "TECH-004"
+    title: "IdempotencyStore em Redis para produção"
+    severity: medium
+    description: "Implementação atual usa store em memória. Produção precisa de Redis com TTL."
+    resolution: "Migrar IdempotencyStore para Redis com TTL configurável."
+    deadline: "Fase 2"
+
+  - id: "CLIN-001"
+    title: "Validação clínica com dados reais"
+    severity: critical
+    description: "Nenhum teste foi feito com tráfego HL7 real de hospital."
+    resolution: "Piloto de 48h com tráfego HL7 real do hospital AUSTA."
+    deadline: "Fase 2 (Sprint 4)"
+
+  - id: "CLIN-002"
+    title: "Clinical Validation Protocol"
+    severity: high
+    description: "Protocolo formal de validação para scores MEWS/NEWS2/SOFA/qSOFA contra gold-standard."
+    resolution: "Time clínico deve elaborar e executar protocolo de validação."
+    deadline: "2026-Q3"
+
+  - id: "SEC-001"
+    title: "Pentest externo"
+    severity: high
+    description: "Teste de penetração por empresa externa antes do go-live."
+    resolution: "Contratar empresa de segurança para pentest."
+    deadline: "2026-Q4"
+
+  - id: "SEC-002"
+    title: "TLS/HTTPS em produção"
+    severity: high
+    description: "Reverse proxy com Caddy + TLS automático ainda não configurado."
+    resolution: "Configurar Caddy como reverse proxy com Let's Encrypt."
+    deadline: "Fase 3"
+
+completed:
+  - id: "MVP-001"
+    title: "MEWS scoring engine"
+    notes: "Implementado, testado e validado (MEWS-v1.0). 5 parâmetros, determinístico."
+
+  - id: "MVP-002"
+    title: "NEWS2 scoring engine"
+    notes: "Implementado, testado e validado (NEWS2-v1.0). 7 parâmetros, Escala 1 e 2."
+
+  - id: "MVP-003"
+    title: "SOFA scoring engine"
+    notes: "Implementado, testado e validado (SOFA-v1.0). 6 sistemas orgânicos."
+
+  - id: "MVP-004"
+    title: "qSOFA scoring engine"
+    notes: "Implementado, testado e validado (qSOFA-v1.0). 3 critérios binários."
+
+  - id: "MVP-005"
+    title: "POST /api/v1/vitals — ingestão com idempotência"
+    notes: "Ingestão de sinais vitais com X-Idempotency-Key, cálculo de 4 scores e alert engine."
+
+  - id: "MVP-006"
+    title: "GET /api/v1/patients/{mpi_id}/status"
+    notes: "Status agregado: vitals recentes, último score, tendência (5 últimos)."
+
+  - id: "MVP-007"
+    title: "GET /api/v1/dashboard"
+    notes: "Grid de leitos com MEWS, NEWS2, alertas. Filtro por unidade."
+
+  - id: "MVP-008"
+    title: "Alert engine com thresholds e rate limiting"
+    notes: "Thresholds configuráveis por tenant/unit, rate limiting Redis, cooldown."
+
+  - id: "MVP-009"
+    title: "WebSocket para alertas em tempo real"
+    notes: "Connect/subscribe/unsubscribe/broadcast. Clientes sem subscription recebem todos."
+
+  - id: "MVP-010"
+    title: "JWT authentication"
+    notes: "Login/register/logout com bcrypt + JWT (access 30min, refresh 7 dias). Token blacklist."
+
+  - id: "MVP-011"
+    title: "MLLP Listener (HL7 v2)"
+    notes: "Servidor TCP async na porta 2575. Parseia ORU-R01, mapeia LOINC, encaminha para API."
+
+  - id: "MVP-012"
+    title: "Docker Compose ambiente dev"
+    notes: "API + PostgreSQL/TimescaleDB + Redis + MLLP Listener + Frontend React."
+
+  - id: "MVP-013"
+    title: "Frontend React dashboard"
+    notes: "BedGrid, PatientDetail com gráficos, AlertPanel, autenticação JWT."
+
+  - id: "MVP-014"
+    title: "Test suite (12 arquivos)"
+    notes: "Cobertura de todos os componentes: scoring, API, auth, alerts, WebSocket, MLLP."
+
+  - id: "MVP-015"
+    title: "Versionamento de algoritmos"
+    notes: "Coluna algorithm_version em clinical_score. Invariante #3 implementado."
+
+  - id: "DOC-001"
+    title: "README atualizado com instruções reais"
+    notes: "README reflete o estado atual do código, com exemplos reais de curl e endpoints."
+
+  - id: "DOC-002"
+    title: "API documentation (docs/api/overview.md)"
+    notes: "Todos os endpoints documentados com request/response examples."
+
+  - id: "DOC-003"
+    title: "PROJECT_STATUS.md"
+    notes: "Status completo do projeto: o que funciona, pendências, arquitetura, como rodar."
+
+  - id: "DOC-004"
+    title: "Review queue atualizada"
+    notes: "docs/review-queue.md atualizado com status de todos os itens regulatórios e técnicos."

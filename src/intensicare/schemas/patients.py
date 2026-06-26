@@ -50,6 +50,25 @@ class TrendSummary(BaseModel):
     )
 
 
+class FHIREnrichment(BaseModel):
+    """FHIR-enriched demographics and clinical context from HAPI FHIR.
+
+    Only populated when FHIR_BASE_URL is configured and enrichment
+    is requested (enrich=true query parameter).
+    """
+
+    display_name: str | None = None
+    gender: str | None = None
+    birth_date: str | None = None
+    marital_status: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    primary_condition: str | None = None
+    condition_list: list[str] = Field(default_factory=list)
+    allergy_list: list[str] = Field(default_factory=list)
+    latest_observations: dict = Field(default_factory=dict)
+
+
 class PatientStatusResponse(BaseModel):
     """Resposta completa do status do paciente."""
 
@@ -66,6 +85,11 @@ class PatientStatusResponse(BaseModel):
     )
     last_updated: datetime | None = Field(
         None, description="Timestamp da última atualização"
+    )
+    fhir: FHIREnrichment | None = Field(
+        None,
+        description="FHIR enrichment data (only when enrich=true is requested "
+        "and FHIR_BASE_URL is configured).",
     )
 
     model_config = {"from_attributes": True}
