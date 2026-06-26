@@ -23,13 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-import hl7apy  # type: ignore[import-untyped]
-from hl7apy.core import Message  # type: ignore[import-untyped]
+import hl7apy.parser  # type: ignore[import-untyped]
 
 # ---------------------------------------------------------------------------
 # MLLP Protocol Constants
@@ -105,31 +103,27 @@ logger.setLevel(logging.DEBUG)
 # HL7 Parsing Utilities
 # ---------------------------------------------------------------------------
 
-def _safe_get_segment(msg: Message, segment_name: str, index: int = 0) -> Any:
-    """Safely retrieve a segment from an hl7apy Message.
+def _safe_get_segments(segments: list[Any], segment_name: str) -> list[Any]:
+    """Filter segments by name from a flat segment list (hl7apy 1.x)."""
+    return [s for s in segments if str(s.name) == segment_name]
 
-    Returns the segment object or None if not present.
+
+def _get_subfield(segment: Any, field_attr: str, sub_attr: str) -> str | None:
+    """Extract a sub-field value from an hl7apy segment.
+
+    Example: _get_subfield(pid, 'PID_3', 'PID_3_1') returns the patient ID.
     """
     try:
-        segments = getattr(msg, segment_name)
-        if isinstance(segments, list):
-            if index < len(segments):
-                return segments[index]
+        field = getattr(segment, field_attr, None)
+        if field is None:
             return None
-        return segments
-    except AttributeError:
-        return None
-
-
-def _safe_field(segment: Any, field_idx: int, sub_idx: int = 1) -> str | None:
-    """Safely extract a field value from an hl7apy segment."""
-    if segment is None:
-        return None
-    try:
-        val = str(segment.children[field_idx - 1].children[sub_idx - 1].value)
+        sub = getattr(field, sub_attr, None)
+        if sub is None:
+            return None
+        val = str(sub.value)
         val = val.strip()
         return val if val else None
-    except (IndexError, AttributeError):
+    except (AttributeError, IndexError):
         return None
 
 
@@ -238,30 +232,35 @@ def parse_oru_r01(message_str: str) -> dict[str, Any] | None:
         or None if parsing fails.
     """
     try:
-        msg = hl7apy.loads(message_str.replace("\\r", "\r"))
+        segments = hl7apy.parser.parse_segments(
+            message_str.replace("\\r", "\r")
+        )
     except Exception as exc:
         logger.error("Failed to parse HL7 message: %s", exc)
         return None
 
     # --- Extract MSH-10 (Message Control ID → Idempotency Key) ---
-    msh = _safe_get_segment(msg, SEG_MSH)
-    idempotency_key = _safe_field(msh, 10)  # MSH-10
+    msh_list = _safe_get_segments(segments, SEG_MSH)
+    msh = msh_list[0] if msh_list else None
+    idempotency_key = _get_subfield(msh, "MSH_10", "MSH_10_1") if msh else None
     if idempotency_key is None:
         logger.warning("MSH-10 (Message Control ID) is missing; cannot guarantee idempotency")
 
     # --- Extract MSH-7 (Message DateTime) as fallback ---
-    msh_timestamp = _safe_field(msh, 7)
+    msh_timestamp = _get_subfield(msh, "MSH_7", "MSH_7_1") if msh else None
 
     # --- Extract PID-3 (Patient ID) ---
-    pid = _safe_get_segment(msg, SEG_PID)
-    mpi_id = _safe_field(pid, 3)  # PID-3 first component (patient identifier)
+    pid_list = _safe_get_segments(segments, SEG_PID)
+    pid = pid_list[0] if pid_list else None
+    mpi_id = _get_subfield(pid, "PID_3", "PID_3_1") if pid else None
     if mpi_id is None:
         logger.error("PID-3 (Patient Identifier) is missing; cannot process message")
         return None
 
     # --- Extract OBR-7 (Observation DateTime) for recorded_at ---
-    obr = _safe_get_segment(msg, SEG_OBR, 0)
-    obr_timestamp = _safe_field(obr, 7)  # OBR-7
+    obr_list = _safe_get_segments(segments, SEG_OBR)
+    obr = obr_list[0] if obr_list else None
+    obr_timestamp = _get_subfield(obr, "OBR_7", "OBR_7_1") if obr else None
 
     # Use OBR-7, fall back to MSH-7
     recorded_at_raw = obr_timestamp or msh_timestamp
@@ -272,26 +271,19 @@ def parse_oru_r01(message_str: str) -> dict[str, Any] | None:
 
     # --- Extract vital signs from OBX segments ---
     vitals: dict[str, Any] = {}
-
-    obx_segments = []
-    try:
-        if hasattr(msg, SEG_OBX):
-            raw_obx = msg.OBX
-            obx_segments = raw_obx if isinstance(raw_obx, list) else [raw_obx]
-    except AttributeError:
-        pass
+    obx_segments = _safe_get_segments(segments, SEG_OBX)
 
     for idx, obx in enumerate(obx_segments):
         # OBX-3: Observation Identifier
-        obx3_id = _safe_field(obx, 3)  # OBX-3.1 (identifier)
-        obx3_text = _safe_field(obx, 3, 2)  # OBX-3.2 (text)
+        obx3_id = _get_subfield(obx, "OBX_3", "OBX_3_1")  # OBX-3.1 (identifier)
+        obx3_text = _get_subfield(obx, "OBX_3", "OBX_3_2")  # OBX-3.2 (text)
 
         if obx3_id is None:
             logger.debug("OBX[%d] has no identifier (OBX-3); skipping", idx)
             continue
 
         # OBX-5: Observation Value
-        obx5_value = _safe_field(obx, 5)  # OBX-5.1
+        obx5_value = _get_subfield(obx, "OBX_5", "OBX_5_1")  # OBX-5.1
 
         field_name = _map_obx3_to_field(obx3_id, obx3_text)
         if field_name is None:

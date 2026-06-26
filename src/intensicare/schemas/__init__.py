@@ -10,6 +10,12 @@ from intensicare.schemas.patients import (
     TrendSummary,
     VitalSignSummary,
 )
+from intensicare.schemas.thresholds import (
+    ThresholdConfigBase,
+    ThresholdConfigCreate,
+    ThresholdConfigResponse,
+    ThresholdConfigUpdate,
+)
 
 __all__ = [
     "VitalSignCreate",
@@ -18,4 +24,8 @@ __all__ = [
     "ScoreSummary",
     "TrendSummary",
     "VitalSignSummary",
+    "ThresholdConfigBase",
+    "ThresholdConfigCreate",
+    "ThresholdConfigResponse",
+    "ThresholdConfigUpdate",
 ]
