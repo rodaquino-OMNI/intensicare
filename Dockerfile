@@ -14,7 +14,6 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# Dependências de sistema para asyncpg + build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -23,9 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Instala dependências Python via pyproject.toml
+# Instala dependências Python
 COPY pyproject.toml .
-
+COPY src/ ./src/
 RUN pip install --upgrade pip setuptools wheel \
     && pip install -e ".[dev]"
 
@@ -37,8 +36,6 @@ FROM base AS development
 ENV ENVIRONMENT=development \
     LOG_LEVEL=DEBUG
 
-# Copia código mínimo (a maior parte vem por volume mount)
-COPY src/ ./src/
 COPY tests/ ./tests/
 COPY alembic/ ./alembic/
 
@@ -47,7 +44,7 @@ EXPOSE 8000
 CMD ["uvicorn", "intensicare.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "src"]
 
 # ---------------------------------------------------------------------------
-# Estágio de produção — código copiado, sem dev dependencies
+# Estágio de produção
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS production
 
@@ -65,17 +62,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copia e instala apenas dependências de runtime
 COPY pyproject.toml .
-RUN pip install --upgrade pip \
-    && pip install -e ".[test]"  # test inclui httpx para healthcheck
-RUN pip uninstall -y pytest pytest-cov pytest-asyncio factory-boy faker ruff mypy pre-commit || true
-
-# Copia código fonte
 COPY src/ ./src/
+RUN pip install --upgrade pip && pip install -e ".[test]" \
+    && pip uninstall -y pytest pytest-cov pytest-asyncio factory-boy faker ruff mypy pre-commit || true
+
 COPY alembic/ ./alembic/
 
-# Cria usuário não-root
 RUN groupadd -r intensicare && useradd -r -g intensicare -d /app -s /sbin/nologin intensicare \
     && chown -R intensicare:intensicare /app
 USER intensicare
