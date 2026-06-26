@@ -26,8 +26,10 @@ from intensicare.main import app
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Sobrescreve database URL com banco de teste
-TEST_DATABASE_URL = settings.database_url.replace(
-    settings.postgres_db, f"{settings.postgres_db}_test"
+TEST_DATABASE_URL = (
+    settings.database_url.rsplit("/", 1)[0]
+    + "/"
+    + f"{settings.postgres_db}_test"
 )
 
 
